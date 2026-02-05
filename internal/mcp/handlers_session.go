@@ -299,11 +299,12 @@ func (s *Server) handleSpawnPrime(ctx context.Context, params *SpawnParams) (*mc
 		existingSession, err := s.sessionMgr.GetLatestSession(params.ProjectID)
 		if err == nil && existingSession != nil && existingSession.DroidSessionID != "" {
 			logger.Info("Resuming existing session %s for project %s", existingSession.SessionID, params.ProjectID)
-			sess, executor, err := s.sessionMgr.ResumeBidirectionalSession(ctx, existingSession, env.containerName, params.Prompt, opts)
-			if err != nil {
-				logger.Error("Failed to resume session, creating new: %v", err)
+			resumedSess, executor, resumeErr := s.sessionMgr.ResumeBidirectionalSession(ctx, existingSession, env.containerName, params.Prompt, opts)
+			if resumeErr != nil {
+				logger.Error("Failed to resume session, creating new: %v", resumeErr)
 			} else {
 				isResume = true
+				sess = resumedSess
 				activeSess = session.NewActiveSession(sess.SessionID, params.ProjectID, env.workspaceID, env.containerName, executor)
 
 				// Set up final response fetcher for resumed sessions
