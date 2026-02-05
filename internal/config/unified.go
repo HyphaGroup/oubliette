@@ -155,7 +155,7 @@ func applyUnifiedDefaults(cfg *UnifiedConfig) {
 
 	// Agent defaults
 	if cfg.Defaults.Agent.Runtime == "" {
-		cfg.Defaults.Agent.Runtime = "droid"
+		cfg.Defaults.Agent.Runtime = "opencode"
 	}
 	if cfg.Defaults.Agent.Model == "" {
 		cfg.Defaults.Agent.Model = "sonnet"

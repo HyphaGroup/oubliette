@@ -89,7 +89,7 @@ func DefaultConfigDefaults() ConfigDefaultsConfig {
 			MaxCostUSD:          10.00,
 		},
 		Agent: AgentDefaults{
-			Runtime:   "droid",
+			Runtime:   "opencode",
 			Model:     "sonnet",
 			Autonomy:  "off",
 			Reasoning: "medium",

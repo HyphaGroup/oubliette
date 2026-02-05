@@ -17,7 +17,7 @@ Headless agentic coding tool orchestration system with session management and re
 - **💬 Interactive Messaging**: Send real-time messages to active sessions with bidirectional communication
 - **📊 Session Hierarchy**: Automatic depth tracking across parent → child → grandchild chains
 - **🔧 Configurable Limits**: Per-project recursion depth limits enforced automatically
-- **📁 Workspace Isolation**: UUID-based workspaces with three-level .factory config inheritance
+- **📁 Workspace Isolation**: UUID-based workspaces with inherited runtime configuration
 - **🎯 Streaming Events**: Ring buffer with index-based event polling for live session monitoring
 
 ## Quick Start
@@ -40,7 +40,7 @@ oubliette init
 oubliette mcp --setup droid    # or: claude, claude-code
 
 # Add your API keys
-# Edit ~/.oubliette/config/credentials.json
+# Edit ~/.oubliette/config/oubliette.jsonc
 
 # Start the server
 oubliette --config-dir ~/.oubliette/config
@@ -62,8 +62,8 @@ cd oubliette
 # - Docker Desktop or Apple Container (see Container Runtime below)
 
 # 3. Configure
-cp config/credentials.json.example config/credentials.json
-# Edit config/credentials.json with your API keys
+cp config/oubliette.jsonc.example config/oubliette.jsonc
+# Edit config/oubliette.jsonc with your API keys
 
 # 4. Build (creates agent container image + server binary)
 ./build.sh
@@ -127,7 +127,7 @@ cp config/oubliette.jsonc.example config/oubliette.jsonc
       "max_cost_usd": 10.00
     },
     "agent": {
-      "runtime": "droid",      // "droid" or "opencode"
+      "runtime": "opencode",   // "opencode" or "droid"
       "model": "sonnet",       // Model alias from models section
       "autonomy": "off",       // off, low, medium, high
       "reasoning": "medium"    // off, low, medium, high
@@ -169,10 +169,7 @@ cp config/oubliette.jsonc.example config/oubliette.jsonc
 - `medium` - Balanced thinking (default)
 - `high` - Maximum thinking budget
 
-**Get API Keys:**
-- Factory API key: https://app.factory.ai/settings/api-keys
-- GitHub token: https://github.com/settings/tokens?type=beta (permissions: `contents:write`, `pull_requests:write`, `issues:write`)
-- Anthropic API key (for OpenCode): https://console.anthropic.com/
+
 
 ### Container Runtime
 
@@ -683,17 +680,26 @@ session_events({"session_id": "sess_123", "since_index": 16})
 
 UUID-based workspaces provide isolation within projects:
 
-**Three-Level Inheritance:**
+**Canonical Config Architecture:**
+Each project has a single source of truth (`config.json`) that generates runtime-specific configs:
 ```
-1. template/.factory/          → Shipped defaults (global)
-   ↓ (copied on project create)
-2. projects/<id>/.factory/     → Project overrides
-   ↓ (copied on workspace create, merged with context)
-3. workspaces/<uuid>/.factory/ → Workspace-specific (user tokens)
+projects/<id>/
+├── config.json        → Canonical config (single source of truth)
+├── .factory/          → Generated Droid runtime config
+│   ├── mcp.json
+│   └── settings.json
+├── opencode.json      → Generated OpenCode runtime config
+└── workspaces/
+    └── <uuid>/        → Workspace with copied runtime configs
 ```
 
+**Config Inheritance:**
+1. Project `config.json` defines agent settings, MCP servers, and limits
+2. Runtime configs (`.factory/`, `opencode.json`) are generated from canonical config
+3. Workspaces inherit project config, with context merged at session start
+
 **Context Propagation:**
-`session_message` accepts `context` map that gets merged into workspace MCP config:
+`session_message` accepts `context` map that gets merged into workspace config:
 ```json
 {
   "context": {

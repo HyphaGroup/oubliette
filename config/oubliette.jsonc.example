@@ -51,7 +51,7 @@
       "max_cost_usd": 10.00
     },
     "agent": {
-      "runtime": "droid",            // droid or opencode
+      "runtime": "opencode",         // opencode or droid
       "model": "sonnet",             // Model shorthand
       "autonomy": "off",             // off, semi, full
       "reasoning": "medium",         // low, medium, high
