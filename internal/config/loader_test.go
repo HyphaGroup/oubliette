@@ -212,17 +212,18 @@ func TestLoadAll(t *testing.T) {
 }
 
 func TestLoadedConfig_Validate(t *testing.T) {
-	t.Run("missing api key", func(t *testing.T) {
+	t.Run("empty config is valid", func(t *testing.T) {
+		// API keys are optional - OpenCode can run without them
 		cfg := &LoadedConfig{
 			Credentials: &CredentialRegistry{},
 		}
 		err := cfg.Validate()
-		if err == nil {
-			t.Error("expected error for missing API key")
+		if err != nil {
+			t.Errorf("Validate() error = %v, want nil (API keys are optional)", err)
 		}
 	})
 
-	t.Run("valid config", func(t *testing.T) {
+	t.Run("config with credentials is valid", func(t *testing.T) {
 		cfg := &LoadedConfig{
 			Credentials: &CredentialRegistry{
 				Factory: FactoryCredentials{
