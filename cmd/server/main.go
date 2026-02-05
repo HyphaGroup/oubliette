@@ -83,21 +83,29 @@ Commands:
   token        Manage authentication tokens
   container    Manage containers (list, refresh, stop)
 
+Server Options:
+  --dir <path>       Oubliette home directory
+
+Config Precedence (for server):
+  1. --dir flag
+  2. OUBLIETTE_HOME env var
+  3. ./.oubliette (if initialized in current directory)
+  4. ~/.oubliette (default)
+
 Examples:
-  oubliette                              Start the server
+  oubliette                              Start the server (auto-detect config)
+  oubliette --dir /path/to/oubliette     Start with specific config directory
   oubliette init                         Set up ~/.oubliette
   oubliette init --dir .                 Set up in current directory
-  oubliette upgrade                      Upgrade to latest version
-  oubliette upgrade --check              Check for updates without installing
   oubliette mcp --setup droid            Configure MCP for Factory Droid
   oubliette mcp --setup droid --dir .    Use current directory as oubliette home
-  oubliette mcp --setup droid --config ./mcp.json  Output to custom config file
 `, Version)
 }
 
 func runServer() {
 	// Parse command-line flags
 	showVersion := flag.Bool("version", false, "Print version and exit")
+	dirFlag := flag.String("dir", "", "Oubliette home directory (default: ~/.oubliette)")
 	flag.Parse()
 
 	if *showVersion {
@@ -105,12 +113,12 @@ func runServer() {
 		os.Exit(0)
 	}
 
-	// All paths under ~/.oubliette
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatalf("Failed to get home directory: %v", err)
-	}
-	oublietteDir := filepath.Join(homeDir, ".oubliette")
+	// Determine oubliette directory with precedence:
+	// 1. --dir flag
+	// 2. OUBLIETTE_HOME env var
+	// 3. ./.oubliette (current directory)
+	// 4. ~/.oubliette (default)
+	oublietteDir := resolveOublietteDir(*dirFlag)
 	dataDir := filepath.Join(oublietteDir, "data")
 	configDir := filepath.Join(oublietteDir, "config")
 
@@ -1493,4 +1501,46 @@ func initContainerRuntime() (container.Runtime, error) {
 		}
 		return docker.NewRuntime()
 	}
+}
+
+// resolveOublietteDir determines the oubliette home directory with precedence:
+// 1. Explicit flag (if provided)
+// 2. OUBLIETTE_HOME env var
+// 3. ./.oubliette (current directory, if initialized)
+// 4. ~/.oubliette (default)
+func resolveOublietteDir(flagDir string) string {
+	// 1. Explicit flag takes highest precedence
+	if flagDir != "" {
+		absDir, err := filepath.Abs(flagDir)
+		if err != nil {
+			log.Fatalf("Invalid directory: %v", err)
+		}
+		return absDir
+	}
+
+	// 2. OUBLIETTE_HOME env var
+	if envDir := os.Getenv("OUBLIETTE_HOME"); envDir != "" {
+		absDir, err := filepath.Abs(envDir)
+		if err != nil {
+			log.Fatalf("Invalid OUBLIETTE_HOME: %v", err)
+		}
+		return absDir
+	}
+
+	// 3. Check current directory for .oubliette
+	cwd, err := os.Getwd()
+	if err == nil {
+		localDir := filepath.Join(cwd, ".oubliette")
+		configFile := filepath.Join(localDir, "config", "oubliette.jsonc")
+		if _, err := os.Stat(configFile); err == nil {
+			return localDir
+		}
+	}
+
+	// 4. Default to ~/.oubliette
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("Failed to get home directory: %v", err)
+	}
+	return filepath.Join(homeDir, ".oubliette")
 }
