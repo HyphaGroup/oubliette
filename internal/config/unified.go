@@ -247,16 +247,7 @@ func (u *UnifiedConfig) GetModelRegistry() *ModelRegistry {
 
 // Validate checks that required configuration is present
 func (u *UnifiedConfig) Validate() error {
-	// Check for Factory API key
-	if u.Credentials.Factory.Default == "" {
-		return fmt.Errorf("credentials.factory.default is required")
-	}
-	if _, ok := u.Credentials.Factory.Credentials[u.Credentials.Factory.Default]; !ok {
-		return fmt.Errorf("credentials.factory.default '%s' not found in credentials", u.Credentials.Factory.Default)
-	}
-	key := u.Credentials.Factory.Credentials[u.Credentials.Factory.Default].APIKey
-	if key == "" {
-		return fmt.Errorf("factory API key is required for credential '%s'", u.Credentials.Factory.Default)
-	}
+	// No required fields - Factory API key is optional (OpenCode works without it)
+	// Server will use OpenCode runtime if no Factory key is configured
 	return nil
 }

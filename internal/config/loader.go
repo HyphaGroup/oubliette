@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"path/filepath"
 )
 
@@ -136,8 +135,6 @@ func (c *LoadedConfig) HasFactoryAPIKey() bool {
 
 // Validate checks that required configuration is present
 func (c *LoadedConfig) Validate() error {
-	if !c.HasFactoryAPIKey() {
-		return fmt.Errorf("factory API key is required: add to oubliette.jsonc")
-	}
+	// No required fields - Factory API key is optional (OpenCode works without it)
 	return nil
 }
