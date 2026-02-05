@@ -15,6 +15,7 @@ type CachedRuntime struct {
 	mu       sync.RWMutex
 	ttl      time.Duration
 	cleanupC chan struct{}
+	closed   bool
 }
 
 type statusCacheEntry struct {
@@ -123,6 +124,14 @@ func (cr *CachedRuntime) Create(ctx context.Context, config CreateConfig) (strin
 
 // Close stops the cleanup goroutine and closes the underlying runtime
 func (cr *CachedRuntime) Close() error {
+	cr.mu.Lock()
+	if cr.closed {
+		cr.mu.Unlock()
+		return nil
+	}
+	cr.closed = true
+	cr.mu.Unlock()
+
 	close(cr.cleanupC)
 	return cr.Runtime.Close()
 }
