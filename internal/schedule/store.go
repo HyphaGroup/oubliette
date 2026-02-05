@@ -29,10 +29,16 @@ func NewStore(dataDir string) (*Store, error) {
 	}
 
 	dbPath := filepath.Join(dataDir, "schedules.db")
-	// Enable WAL mode and busy timeout for better concurrent access
-	db, err := sql.Open("sqlite", dbPath+"?_busy_timeout=5000&_journal_mode=WAL")
+	// Enable busy timeout for better concurrent access
+	db, err := sql.Open("sqlite", dbPath+"?_busy_timeout=5000")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
+	}
+
+	// Enable WAL mode via PRAGMA (more reliable than DSN parameter)
+	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("failed to enable WAL mode: %w", err)
 	}
 
 	store := &Store{db: db}
