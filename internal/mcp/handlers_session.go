@@ -199,6 +199,11 @@ func (s *Server) spawnAndRegisterSession(ctx context.Context, projectID, contain
 		if err := s.socketHandler.ConnectSession(context.Background(), projectID, sess.SessionID, 0); err != nil {
 			logger.Error("Failed to connect to relay for session %s: %v", sess.SessionID, err)
 		}
+		// Connection closed - mark session as completed if still active
+		if activeSess, ok := s.activeSessions.Get(sess.SessionID); ok && activeSess.IsRunning() {
+			logger.Info("Session %s relay connection closed, marking as completed", sess.SessionID)
+			activeSess.SetStatus(session.ActiveStatusCompleted, nil)
+		}
 	}()
 
 	// Set up final response fetcher - called when session completes to get final text
