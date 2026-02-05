@@ -254,12 +254,21 @@ func runServer() {
 
 	// Default runtime: Droid if Factory API key exists, otherwise OpenCode
 	var defaultRuntime agent.Runtime
+	hasProviderKey := false
+	if provCred, ok := cfg.Credentials.GetDefaultProviderCredential(); ok && provCred.APIKey != "" {
+		hasProviderKey = true
+	}
+
 	if factoryAPIKey != "" {
 		defaultRuntime = droidRuntime
 		logger.Println("🤖 Default agent runtime: Droid (Factory API key present)")
 	} else {
 		defaultRuntime = opencodeRuntime
 		logger.Println("🤖 Default agent runtime: OpenCode (no Factory API key)")
+		if !hasProviderKey {
+			logger.Println("⚠️  WARNING: No API keys configured in oubliette.jsonc")
+			logger.Println("   Sessions will fail until you add credentials.providers or credentials.factory")
+		}
 	}
 
 	// Determine Oubliette MCP URL for session-specific configs
