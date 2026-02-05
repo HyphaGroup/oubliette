@@ -19,6 +19,7 @@ Headless agentic coding tool orchestration system with session management and re
 - **🔧 Configurable Limits**: Per-project recursion depth limits enforced automatically
 - **📁 Workspace Isolation**: UUID-based workspaces with inherited runtime configuration
 - **🎯 Streaming Events**: Ring buffer with index-based event polling for live session monitoring
+- **⏰ Cron Scheduling**: Schedule recurring agent tasks with standard cron expressions and overlap handling
 
 ## Quick Start
 

@@ -65,11 +65,13 @@ go test ./... -short                        # Unit tests
 
 ## Core Concepts
 
-**Agent Session** = AI agent (Droid/OpenCode) executing in an isolated container.
+**Gogol** = An executing agent session instance (Droid or OpenCode) running in a container.
 
-**Workspace** = Isolated execution environment within a project. Each has its own `.factory/` config.
+**Workspace** = Isolated execution environment within a project with inherited runtime configuration.
 
 **Container Runtime** = Docker or Apple Container (auto-detected). Both provide identical functionality.
+
+**Schedule** = Cron-based recurring task that executes prompts against project/workspace targets.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 
@@ -78,10 +80,9 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 ```
 oubliette/
 ├── cmd/                     # CLI binaries
-│   ├── server/              # Main MCP server
+│   ├── server/              # Main MCP server (includes token commands)
 │   ├── oubliette-client/    # In-container MCP proxy
-│   ├── oubliette-relay/     # Socket relay
-│   └── token/               # Token management
+│   └── oubliette-relay/     # Socket relay
 ├── internal/                # Private packages
 │   ├── agent/               # Agent runtime abstraction
 │   │   ├── config/          # Unified config translation
@@ -90,7 +91,8 @@ oubliette/
 │   ├── container/           # Container runtime abstraction
 │   ├── mcp/                 # MCP protocol handlers
 │   ├── project/             # Project/workspace management
-│   ├── session/             # Session management
+│   ├── session/             # Session management + event buffer
+│   ├── schedule/            # Cron-based task scheduling
 │   └── ...
 ├── test/                    # Integration tests
 │   ├── cmd/                 # Test runner

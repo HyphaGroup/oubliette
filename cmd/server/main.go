@@ -884,7 +884,21 @@ func cmdMCP(args []string) {
 		os.Exit(1)
 	}
 
+	// Determine oubliette directory first (needed for config path resolution)
+	var oublietteDir string
+	if *dirFlag != "" {
+		oublietteDir, err = filepath.Abs(*dirFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: invalid directory: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		oublietteDir = filepath.Join(homeDir, ".oubliette")
+	}
+
 	// Determine config file path
+	// When --dir is specified, use local .factory/mcp.json for project-local config
+	// Otherwise use global config location
 	var configPath string
 	if *configFlag != "" {
 		configPath, err = filepath.Abs(*configFlag)
@@ -892,6 +906,9 @@ func cmdMCP(args []string) {
 			fmt.Fprintf(os.Stderr, "Error: invalid config path: %v\n", err)
 			os.Exit(1)
 		}
+	} else if *dirFlag != "" && tool == "droid" {
+		// Local project config - Droid discovers .factory/mcp.json in working directory
+		configPath = filepath.Join(oublietteDir, ".factory", "mcp.json")
 	} else {
 		switch tool {
 		case "droid":
@@ -916,16 +933,6 @@ func cmdMCP(args []string) {
 	fmt.Println("")
 
 	// Determine oubliette paths
-	var oublietteDir string
-	if *dirFlag != "" {
-		oublietteDir, err = filepath.Abs(*dirFlag)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: invalid directory: %v\n", err)
-			os.Exit(1)
-		}
-	} else {
-		oublietteDir = filepath.Join(homeDir, ".oubliette")
-	}
 	dataDir := filepath.Join(oublietteDir, "data")
 	binaryPath := filepath.Join(oublietteDir, "bin", "oubliette")
 
