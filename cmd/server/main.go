@@ -937,11 +937,29 @@ func cmdMCP(args []string) {
 	binaryPath := filepath.Join(oublietteDir, "bin", "oubliette")
 
 	// Check if oubliette is initialized
+	configDir := filepath.Join(oublietteDir, "config")
 	if _, err := os.Stat(dataDir); os.IsNotExist(err) {
 		fmt.Fprintf(os.Stderr, "Error: Oubliette is not initialized.\n")
 		fmt.Fprintf(os.Stderr, "Run 'oubliette init' first.\n")
 		os.Exit(1)
 	}
+
+	// Load oubliette config to get server address
+	cfg, err := config.LoadAll(configDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+	serverAddr := cfg.Server.Address
+	if serverAddr == "" {
+		serverAddr = ":8080"
+	}
+	// Extract port from address (e.g., ":8080" or "localhost:8080")
+	port := serverAddr
+	if idx := strings.LastIndex(serverAddr, ":"); idx >= 0 {
+		port = serverAddr[idx+1:]
+	}
+	mcpURL := fmt.Sprintf("http://localhost:%s/mcp", port)
 
 	// Create/get auth token
 	authStore, err := auth.NewStore(dataDir)
@@ -1000,7 +1018,7 @@ func cmdMCP(args []string) {
 	// Add/update oubliette entry (HTTP mode - oubliette is an HTTP MCP server)
 	mcpServers["oubliette"] = map[string]interface{}{
 		"type": "http",
-		"url":  "http://localhost:8080/mcp",
+		"url":  mcpURL,
 		"headers": map[string]string{
 			"Authorization": "Bearer " + tokenID,
 		},
