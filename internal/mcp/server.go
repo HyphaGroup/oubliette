@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
+	"time"
 
 	"github.com/HyphaGroup/oubliette/internal/agent"
 	"github.com/HyphaGroup/oubliette/internal/auth"
@@ -286,9 +287,53 @@ func (s *Server) GetRegistry() *Registry {
 	return s.registry
 }
 
+// ScheduleExecutionResult contains the result of executing a schedule target
+type ScheduleExecutionResult struct {
+	SessionID string
+	Output    string
+}
+
 // executeScheduleTarget is called by the schedule runner to execute a single target
-// It sends a message to the target project/workspace, reusing existing session logic.
+// It sends a message to the target project/workspace using pinned session logic.
 func (s *Server) executeScheduleTarget(ctx context.Context, sched *schedule.Schedule, target *schedule.ScheduleTarget) ([]string, error) {
+	startTime := time.Now()
+
+	result, err := s.doExecuteScheduleTarget(ctx, sched, target)
+
+	// Record execution in history
+	exec := &schedule.Execution{
+		ScheduleID: sched.ID,
+		TargetID:   target.ID,
+		ExecutedAt: startTime,
+		DurationMs: time.Since(startTime).Milliseconds(),
+	}
+
+	if err != nil {
+		exec.Status = schedule.ExecutionFailed
+		exec.Error = err.Error()
+	} else {
+		exec.Status = schedule.ExecutionSuccess
+		exec.SessionID = result.SessionID
+		exec.Output = result.Output
+
+		// Update target with session ID and last output
+		if updateErr := s.scheduleStore.UpdateTargetExecution(target.ID, result.SessionID, result.Output); updateErr != nil {
+			logger.Error("Failed to update target execution: %v", updateErr)
+		}
+	}
+
+	if recordErr := s.scheduleStore.RecordExecution(exec); recordErr != nil {
+		logger.Error("Failed to record execution: %v", recordErr)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	return []string{result.SessionID}, nil
+}
+
+// doExecuteScheduleTarget performs the actual execution logic
+func (s *Server) doExecuteScheduleTarget(ctx context.Context, sched *schedule.Schedule, target *schedule.ScheduleTarget) (*ScheduleExecutionResult, error) {
 	// Determine workspace ID (use default if not specified)
 	workspaceID := target.WorkspaceID
 	if workspaceID == "" {
@@ -299,23 +344,69 @@ func (s *Server) executeScheduleTarget(ctx context.Context, sched *schedule.Sche
 		workspaceID = proj.DefaultWorkspaceID
 	}
 
-	// For new session behavior, remove any existing active session first
+	// For new session behavior, clear pinned session
 	if sched.SessionBehavior == schedule.SessionNew {
 		if activeSess, ok := s.activeSessions.GetByWorkspace(target.ProjectID, workspaceID); ok {
 			s.activeSessions.Remove(activeSess.SessionID)
 		}
+		// Clear pinned session - will spawn fresh
+		target.SessionID = ""
 	}
 
-	// Check for existing active session (resume behavior)
-	if activeSess, ok := s.activeSessions.GetByWorkspace(target.ProjectID, workspaceID); ok && activeSess.IsRunning() {
-		// Send message to existing session
-		if err := activeSess.SendMessage(sched.Prompt); err != nil {
-			return nil, err
+	// Try to use pinned session first
+	if target.SessionID != "" {
+		// Check if session is active
+		if activeSess, ok := s.activeSessions.Get(target.SessionID); ok && activeSess.IsRunning() {
+			if err := activeSess.SendMessage(sched.Prompt); err != nil {
+				return nil, err
+			}
+			output := s.waitForSessionOutput(activeSess, target.SessionID)
+			return &ScheduleExecutionResult{SessionID: target.SessionID, Output: output}, nil
 		}
-		return []string{activeSess.SessionID}, nil
+
+		// Session not active - try to resume from disk
+		existingSession, err := s.sessionMgr.Load(target.SessionID)
+		if err == nil && existingSession != nil && existingSession.DroidSessionID != "" {
+			env, err := s.prepareSessionEnvironment(ctx, target.ProjectID, workspaceID, false, "", "schedule", nil)
+			if err != nil {
+				logger.Info("Failed to prepare environment for session resume: %v", err)
+			} else {
+				projectRuntime := s.GetRuntimeForProject(env.project)
+				opts := session.StartOptions{
+					WorkspaceID:        workspaceID,
+					WorkspaceIsolation: env.project.WorkspaceIsolation,
+					RuntimeOverride:    projectRuntime,
+				}
+
+				resumedSess, executor, resumeErr := s.sessionMgr.ResumeBidirectionalSession(ctx, existingSession, env.containerName, sched.Prompt, opts)
+				if resumeErr == nil {
+					activeSess := session.NewActiveSession(resumedSess.SessionID, target.ProjectID, workspaceID, env.containerName, executor)
+					if regErr := s.activeSessions.Register(activeSess); regErr != nil {
+						_ = executor.Close()
+						logger.Info("Failed to register resumed session: %v", regErr)
+					} else {
+						// Connect to relay in background
+						go func() {
+							if err := s.socketHandler.ConnectSession(context.Background(), target.ProjectID, resumedSess.SessionID, 0); err != nil {
+								logger.Error("Failed to connect to relay for resumed session %s: %v", resumedSess.SessionID, err)
+							}
+							if activeSess, ok := s.activeSessions.Get(resumedSess.SessionID); ok && activeSess.IsRunning() {
+								logger.Info("Session %s relay connection closed, marking as completed", resumedSess.SessionID)
+								activeSess.SetStatus(session.ActiveStatusCompleted, nil)
+							}
+						}()
+
+						output := s.waitForSessionOutput(activeSess, resumedSess.SessionID)
+						return &ScheduleExecutionResult{SessionID: resumedSess.SessionID, Output: output}, nil
+					}
+				} else {
+					logger.Info("Failed to resume pinned session %s, will spawn new: %v", target.SessionID, resumeErr)
+				}
+			}
+		}
 	}
 
-	// Need to spawn new session - use prepareSessionEnvironment + spawnAndRegisterSession
+	// No pinned session or resume failed - spawn new
 	env, err := s.prepareSessionEnvironment(ctx, target.ProjectID, workspaceID, false, "", "schedule", nil)
 	if err != nil {
 		return nil, err
@@ -328,10 +419,37 @@ func (s *Server) executeScheduleTarget(ctx context.Context, sched *schedule.Sche
 		RuntimeOverride:    projectRuntime,
 	}
 
-	sess, _, err := s.spawnAndRegisterSession(ctx, target.ProjectID, env.containerName, env.workspaceID, sched.Prompt, opts, nil)
+	sess, activeSess, err := s.spawnAndRegisterSession(ctx, target.ProjectID, env.containerName, env.workspaceID, sched.Prompt, opts, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	return []string{sess.SessionID}, nil
+	output := s.waitForSessionOutput(activeSess, sess.SessionID)
+	return &ScheduleExecutionResult{SessionID: sess.SessionID, Output: output}, nil
+}
+
+// waitForSessionOutput waits for the session to complete its current task and returns the output
+func (s *Server) waitForSessionOutput(activeSess *session.ActiveSession, sessionID string) string {
+	// Wait for session to become idle (up to 5 minutes)
+	timeout := time.After(5 * time.Minute)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-timeout:
+			logger.Info("Timeout waiting for session %s output", sessionID)
+			return ""
+		case <-ticker.C:
+			status := activeSess.GetStatus()
+			if status == session.ActiveStatusIdle || status == session.ActiveStatusCompleted || status == session.ActiveStatusFailed {
+				// Session finished - get the last turn output
+				sess, err := s.sessionMgr.Load(sessionID)
+				if err != nil || sess == nil || len(sess.Turns) == 0 {
+					return ""
+				}
+				return sess.Turns[len(sess.Turns)-1].Output.Text
+			}
+		}
+	}
 }

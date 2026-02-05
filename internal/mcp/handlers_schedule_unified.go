@@ -9,7 +9,7 @@ import (
 
 // ScheduleParams is the unified params struct for the schedule tool
 type ScheduleParams struct {
-	Action string `json:"action"` // Required: create, list, get, update, delete, trigger
+	Action string `json:"action"` // Required: create, list, get, update, delete, trigger, history
 
 	// For create/update
 	Name            string                    `json:"name,omitempty"`
@@ -20,14 +20,17 @@ type ScheduleParams struct {
 	OverlapBehavior *schedule.OverlapBehavior `json:"overlap_behavior,omitempty"`
 	SessionBehavior *schedule.SessionBehavior `json:"session_behavior,omitempty"`
 
-	// For get, update, delete, trigger
+	// For get, update, delete, trigger, history
 	ScheduleID string `json:"schedule_id,omitempty"`
 
 	// For list
 	ProjectID string `json:"project_id,omitempty"`
+
+	// For history
+	Limit int `json:"limit,omitempty"`
 }
 
-var scheduleActions = []string{"create", "list", "get", "update", "delete", "trigger"}
+var scheduleActions = []string{"create", "list", "get", "update", "delete", "trigger", "history"}
 
 // handleSchedule is the unified handler for the schedule tool
 func (s *Server) handleSchedule(ctx context.Context, request *mcp.CallToolRequest, params *ScheduleParams) (*mcp.CallToolResult, any, error) {
@@ -48,6 +51,8 @@ func (s *Server) handleSchedule(ctx context.Context, request *mcp.CallToolReques
 		return s.scheduleDelete(ctx, request, params)
 	case "trigger":
 		return s.scheduleTrigger(ctx, request, params)
+	case "history":
+		return s.scheduleHistory(ctx, request, params)
 	default:
 		return nil, nil, actionError("schedule", params.Action, scheduleActions)
 	}
@@ -104,4 +109,8 @@ func (s *Server) scheduleDelete(ctx context.Context, request *mcp.CallToolReques
 
 func (s *Server) scheduleTrigger(ctx context.Context, request *mcp.CallToolRequest, params *ScheduleParams) (*mcp.CallToolResult, any, error) {
 	return s.handleScheduleTrigger(ctx, request, &ScheduleTriggerParams{ScheduleID: params.ScheduleID})
+}
+
+func (s *Server) scheduleHistory(ctx context.Context, request *mcp.CallToolRequest, params *ScheduleParams) (*mcp.CallToolResult, any, error) {
+	return s.handleScheduleHistory(ctx, request, &ScheduleHistoryParams{ScheduleID: params.ScheduleID, Limit: params.Limit})
 }

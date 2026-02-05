@@ -41,10 +41,35 @@ type Schedule struct {
 
 // ScheduleTarget represents a project/workspace pair to execute on
 type ScheduleTarget struct {
-	ID          string `json:"id"`
-	ScheduleID  string `json:"schedule_id"`
-	ProjectID   string `json:"project_id"`
-	WorkspaceID string `json:"workspace_id,omitempty"` // Optional, uses default if empty
+	ID             string     `json:"id"`
+	ScheduleID     string     `json:"schedule_id"`
+	ProjectID      string     `json:"project_id"`
+	WorkspaceID    string     `json:"workspace_id,omitempty"`      // Optional, uses default if empty
+	SessionID      string     `json:"session_id,omitempty"`        // Pinned session for this target
+	LastExecutedAt *time.Time `json:"last_executed_at,omitempty"`  // When this target last ran
+	LastOutput     string     `json:"last_output,omitempty"`       // Output from last execution
+}
+
+// ExecutionStatus represents the outcome of a schedule execution
+type ExecutionStatus string
+
+const (
+	ExecutionSuccess ExecutionStatus = "success"
+	ExecutionFailed  ExecutionStatus = "failed"
+	ExecutionSkipped ExecutionStatus = "skipped"
+)
+
+// Execution represents a single execution of a scheduled task
+type Execution struct {
+	ID          string          `json:"id"`
+	ScheduleID  string          `json:"schedule_id"`
+	TargetID    string          `json:"target_id"`
+	SessionID   string          `json:"session_id,omitempty"`
+	ExecutedAt  time.Time       `json:"executed_at"`
+	Status      ExecutionStatus `json:"status"`
+	Output      string          `json:"output,omitempty"`
+	Error       string          `json:"error,omitempty"`
+	DurationMs  int64           `json:"duration_ms,omitempty"`
 }
 
 // ScheduleUpdate contains optional fields for updating a schedule

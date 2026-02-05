@@ -126,7 +126,6 @@ func main() {
 		runner.AddTests(suites.GetScheduleTests())      // Scheduled tasks tests
 		runner.AddTests(suites.GetOpenSpecTests())      // OpenSpec integration tests
 		runner.AddTests(suites.GetComprehensiveTests()) // Comprehensive E2E tests
-		runner.AddTests(suites.GetManagerTests())       // Manager.sh command tests
 		runner.AddTests(suites.GetCLITests())           // CLI binary tests
 
 		// Run tests

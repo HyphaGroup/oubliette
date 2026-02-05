@@ -69,10 +69,27 @@ func (s *Store) migrate() error {
 		schedule_id TEXT NOT NULL,
 		project_id TEXT NOT NULL,
 		workspace_id TEXT,
+		session_id TEXT,
+		last_executed_at DATETIME,
+		last_output TEXT,
 		FOREIGN KEY (schedule_id) REFERENCES schedules(id) ON DELETE CASCADE
 	);
 	CREATE INDEX IF NOT EXISTS idx_targets_schedule ON schedule_targets(schedule_id);
 	CREATE INDEX IF NOT EXISTS idx_targets_project ON schedule_targets(project_id);
+
+	CREATE TABLE IF NOT EXISTS schedule_executions (
+		id TEXT PRIMARY KEY,
+		schedule_id TEXT NOT NULL,
+		target_id TEXT NOT NULL,
+		session_id TEXT,
+		executed_at DATETIME NOT NULL,
+		status TEXT NOT NULL,
+		output TEXT,
+		error TEXT,
+		duration_ms INTEGER,
+		FOREIGN KEY (schedule_id) REFERENCES schedules(id) ON DELETE CASCADE
+	);
+	CREATE INDEX IF NOT EXISTS idx_executions_schedule ON schedule_executions(schedule_id, executed_at DESC);
 	`
 	_, err := s.db.Exec(schema)
 	return err
@@ -186,7 +203,7 @@ func (s *Store) Get(id string) (*Schedule, error) {
 
 func (s *Store) getTargets(scheduleID string) ([]ScheduleTarget, error) {
 	rows, err := s.db.Query(`
-		SELECT id, schedule_id, project_id, workspace_id
+		SELECT id, schedule_id, project_id, workspace_id, session_id, last_executed_at, last_output
 		FROM schedule_targets WHERE schedule_id = ?`, scheduleID,
 	)
 	if err != nil {
@@ -197,13 +214,23 @@ func (s *Store) getTargets(scheduleID string) ([]ScheduleTarget, error) {
 	var targets []ScheduleTarget
 	for rows.Next() {
 		var target ScheduleTarget
-		var workspaceID sql.NullString
+		var workspaceID, sessionID, lastOutput sql.NullString
+		var lastExecutedAt sql.NullTime
 
-		if err := rows.Scan(&target.ID, &target.ScheduleID, &target.ProjectID, &workspaceID); err != nil {
+		if err := rows.Scan(&target.ID, &target.ScheduleID, &target.ProjectID, &workspaceID, &sessionID, &lastExecutedAt, &lastOutput); err != nil {
 			return nil, fmt.Errorf("failed to scan target: %w", err)
 		}
 		if workspaceID.Valid {
 			target.WorkspaceID = workspaceID.String
+		}
+		if sessionID.Valid {
+			target.SessionID = sessionID.String
+		}
+		if lastExecutedAt.Valid {
+			target.LastExecutedAt = &lastExecutedAt.Time
+		}
+		if lastOutput.Valid {
+			target.LastOutput = lastOutput.String
 		}
 		targets = append(targets, target)
 	}
@@ -477,4 +504,121 @@ func (s *Store) UpdateRunTimes(id string, lastRun, nextRun time.Time) error {
 	}
 
 	return nil
+}
+
+// UpdateTargetExecution updates the pinned session and last execution details for a target
+func (s *Store) UpdateTargetExecution(targetID, sessionID, output string) error {
+	now := time.Now()
+	result, err := s.db.Exec(`
+		UPDATE schedule_targets 
+		SET session_id = ?, last_executed_at = ?, last_output = ?
+		WHERE id = ?`,
+		sessionID, now, output, targetID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update target execution: %w", err)
+	}
+
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("target not found: %s", targetID)
+	}
+
+	return nil
+}
+
+// RecordExecution records an execution in the history table
+func (s *Store) RecordExecution(exec *Execution) error {
+	if exec.ID == "" {
+		exec.ID = "exec_" + uuid.New().String()[:8]
+	}
+
+	_, err := s.db.Exec(`
+		INSERT INTO schedule_executions (id, schedule_id, target_id, session_id, executed_at, status, output, error, duration_ms)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		exec.ID, exec.ScheduleID, exec.TargetID, exec.SessionID, exec.ExecutedAt, exec.Status, exec.Output, exec.Error, exec.DurationMs,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to record execution: %w", err)
+	}
+
+	return nil
+}
+
+// ListExecutions returns recent executions for a schedule
+func (s *Store) ListExecutions(scheduleID string, limit int) ([]*Execution, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+
+	rows, err := s.db.Query(`
+		SELECT id, schedule_id, target_id, session_id, executed_at, status, output, error, duration_ms
+		FROM schedule_executions
+		WHERE schedule_id = ?
+		ORDER BY executed_at DESC
+		LIMIT ?`, scheduleID, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list executions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var executions []*Execution
+	for rows.Next() {
+		var exec Execution
+		var sessionID, output, errMsg sql.NullString
+		var durationMs sql.NullInt64
+
+		if err := rows.Scan(&exec.ID, &exec.ScheduleID, &exec.TargetID, &sessionID, &exec.ExecutedAt, &exec.Status, &output, &errMsg, &durationMs); err != nil {
+			return nil, fmt.Errorf("failed to scan execution: %w", err)
+		}
+		if sessionID.Valid {
+			exec.SessionID = sessionID.String
+		}
+		if output.Valid {
+			exec.Output = output.String
+		}
+		if errMsg.Valid {
+			exec.Error = errMsg.String
+		}
+		if durationMs.Valid {
+			exec.DurationMs = durationMs.Int64
+		}
+		executions = append(executions, &exec)
+	}
+
+	return executions, rows.Err()
+}
+
+// GetTarget retrieves a single target by ID
+func (s *Store) GetTarget(targetID string) (*ScheduleTarget, error) {
+	var target ScheduleTarget
+	var workspaceID, sessionID, lastOutput sql.NullString
+	var lastExecutedAt sql.NullTime
+
+	err := s.db.QueryRow(`
+		SELECT id, schedule_id, project_id, workspace_id, session_id, last_executed_at, last_output
+		FROM schedule_targets WHERE id = ?`, targetID,
+	).Scan(&target.ID, &target.ScheduleID, &target.ProjectID, &workspaceID, &sessionID, &lastExecutedAt, &lastOutput)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("target not found: %s", targetID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get target: %w", err)
+	}
+
+	if workspaceID.Valid {
+		target.WorkspaceID = workspaceID.String
+	}
+	if sessionID.Valid {
+		target.SessionID = sessionID.String
+	}
+	if lastExecutedAt.Valid {
+		target.LastExecutedAt = &lastExecutedAt.Time
+	}
+	if lastOutput.Valid {
+		target.LastOutput = lastOutput.String
+	}
+
+	return &target, nil
 }

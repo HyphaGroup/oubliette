@@ -97,6 +97,7 @@ func (r *Runner) executeSchedule(schedule *Schedule) {
 		if runningCount > 0 {
 			r.runningMu.Unlock()
 			logger.Info("Skipping schedule %s (%s): previous execution still running", schedule.ID, schedule.Name)
+			r.recordSkippedExecutions(schedule, "previous execution still running")
 			return
 		}
 	case OverlapQueue:
@@ -104,6 +105,7 @@ func (r *Runner) executeSchedule(schedule *Schedule) {
 			r.runningMu.Unlock()
 			// MVP: just skip with warning, full queue implementation later
 			logger.Info("Skipping schedule %s (%s): previous execution still running (queue not yet implemented)", schedule.ID, schedule.Name)
+			r.recordSkippedExecutions(schedule, "previous execution still running (queue not implemented)")
 			return
 		}
 	case OverlapParallel:
@@ -113,6 +115,7 @@ func (r *Runner) executeSchedule(schedule *Schedule) {
 		if runningCount > 0 {
 			r.runningMu.Unlock()
 			logger.Info("Skipping schedule %s (%s): previous execution still running", schedule.ID, schedule.Name)
+			r.recordSkippedExecutions(schedule, "previous execution still running")
 			return
 		}
 	}
@@ -192,4 +195,21 @@ func (r *Runner) TriggerNow(schedule *Schedule) ([]string, error) {
 
 	// Don't update run times for manual trigger - only for scheduled runs
 	return allSessionIDs, lastErr
+}
+
+// recordSkippedExecutions records a skipped execution for each target
+func (r *Runner) recordSkippedExecutions(schedule *Schedule, reason string) {
+	now := time.Now()
+	for _, target := range schedule.Targets {
+		exec := &Execution{
+			ScheduleID: schedule.ID,
+			TargetID:   target.ID,
+			ExecutedAt: now,
+			Status:     ExecutionSkipped,
+			Error:      reason,
+		}
+		if err := r.store.RecordExecution(exec); err != nil {
+			logger.Error("Failed to record skipped execution for schedule %s: %v", schedule.ID, err)
+		}
+	}
 }

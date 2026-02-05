@@ -367,6 +367,158 @@ func GetScheduleTests() []*testpkg.TestCase {
 				return nil
 			},
 		},
+		{
+			Name:        "test_schedule_history",
+			Description: "Test schedule history action returns execution records",
+			Tags:        []string{"schedule", "history"},
+			Timeout:     120 * time.Second,
+			Execute: func(ctx *testpkg.TestContext) error {
+				// Create project
+				projName := fmt.Sprintf("schedule-history-test-%d", time.Now().UnixNano())
+				projectID, err := ctx.CreateProject(projName, "Project for history testing")
+				ctx.Assertions.AssertNoError(err, "Should create project")
+				if err != nil {
+					return err
+				}
+
+				// Create a disabled schedule
+				createResult, err := ctx.Client.InvokeTool("schedule", map[string]interface{}{
+					"action":    "create",
+					"name":      "history-test",
+					"cron_expr": "0 0 1 1 *",
+					"prompt":    "Say hello",
+					"enabled":   false,
+					"targets":   []map[string]interface{}{{"project_id": projectID}},
+				})
+				ctx.Assertions.AssertNoError(err, "Should create schedule")
+				if err != nil {
+					return err
+				}
+
+				// Extract schedule ID
+				var scheduleID string
+				for _, line := range strings.Split(createResult.GetToolContent(), "\n") {
+					if strings.Contains(line, "sched_") {
+						parts := strings.Fields(line)
+						for _, part := range parts {
+							if strings.HasPrefix(part, "sched_") {
+								scheduleID = part
+								break
+							}
+						}
+					}
+				}
+
+				// Trigger the schedule to create execution history
+				_, err = ctx.Client.InvokeTool("schedule", map[string]interface{}{
+					"action":      "trigger",
+					"schedule_id": scheduleID,
+				})
+				ctx.Assertions.AssertNoError(err, "Should trigger schedule")
+
+				// Wait a moment for execution to complete
+				time.Sleep(2 * time.Second)
+
+				// Get history
+				historyResult, err := ctx.Client.InvokeTool("schedule", map[string]interface{}{
+					"action":      "history",
+					"schedule_id": scheduleID,
+					"limit":       10,
+				})
+				ctx.Assertions.AssertNoError(err, "Should get history")
+				if err != nil {
+					ctx.Client.InvokeTool("schedule", map[string]interface{}{"action": "delete", "schedule_id": scheduleID})
+					return err
+				}
+
+				historyContent := historyResult.GetToolContent()
+				ctx.Log("History result: %s", historyContent)
+
+				// Should have at least one execution
+				ctx.Assertions.AssertContains(historyContent, "history-test", "Should include schedule name")
+
+				// Cleanup
+				ctx.Client.InvokeTool("schedule", map[string]interface{}{"action": "delete", "schedule_id": scheduleID})
+
+				return nil
+			},
+		},
+		{
+			Name:        "test_schedule_session_pinning",
+			Description: "Test that schedule targets store session_id after execution",
+			Tags:        []string{"schedule", "session"},
+			Timeout:     120 * time.Second,
+			Execute: func(ctx *testpkg.TestContext) error {
+				// Create project
+				projName := fmt.Sprintf("schedule-pin-test-%d", time.Now().UnixNano())
+				projectID, err := ctx.CreateProject(projName, "Project for session pinning test")
+				ctx.Assertions.AssertNoError(err, "Should create project")
+				if err != nil {
+					return err
+				}
+
+				// Create a disabled schedule
+				createResult, err := ctx.Client.InvokeTool("schedule", map[string]interface{}{
+					"action":    "create",
+					"name":      "pin-test",
+					"cron_expr": "0 0 1 1 *",
+					"prompt":    "Say hello and report the time",
+					"enabled":   false,
+					"targets":   []map[string]interface{}{{"project_id": projectID}},
+				})
+				ctx.Assertions.AssertNoError(err, "Should create schedule")
+				if err != nil {
+					return err
+				}
+
+				// Extract schedule ID
+				var scheduleID string
+				for _, line := range strings.Split(createResult.GetToolContent(), "\n") {
+					if strings.Contains(line, "sched_") {
+						parts := strings.Fields(line)
+						for _, part := range parts {
+							if strings.HasPrefix(part, "sched_") {
+								scheduleID = part
+								break
+							}
+						}
+					}
+				}
+
+				// Trigger the schedule
+				_, err = ctx.Client.InvokeTool("schedule", map[string]interface{}{
+					"action":      "trigger",
+					"schedule_id": scheduleID,
+				})
+				ctx.Assertions.AssertNoError(err, "Should trigger schedule")
+
+				// Wait for execution
+				time.Sleep(3 * time.Second)
+
+				// Get schedule and check for session_id and last_output
+				getResult, err := ctx.Client.InvokeTool("schedule", map[string]interface{}{
+					"action":      "get",
+					"schedule_id": scheduleID,
+				})
+				ctx.Assertions.AssertNoError(err, "Should get schedule")
+				if err != nil {
+					ctx.Client.InvokeTool("schedule", map[string]interface{}{"action": "delete", "schedule_id": scheduleID})
+					return err
+				}
+
+				getContent := getResult.GetToolContent()
+				ctx.Log("Schedule get result: %s", getContent)
+
+				// Should show session info
+				ctx.Assertions.AssertContains(getContent, "Session:", "Should include session ID")
+				ctx.Assertions.AssertContains(getContent, "Last Run:", "Should include last run time")
+
+				// Cleanup
+				ctx.Client.InvokeTool("schedule", map[string]interface{}{"action": "delete", "schedule_id": scheduleID})
+
+				return nil
+			},
+		},
 	}
 }
 

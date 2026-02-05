@@ -241,6 +241,20 @@ func (s *Server) handleScheduleGet(ctx context.Context, request *mcp.CallToolReq
 		} else {
 			result += fmt.Sprintf("  • %s (default workspace)\n", t.ProjectID)
 		}
+		if t.SessionID != "" {
+			result += fmt.Sprintf("    Session: %s\n", t.SessionID)
+		}
+		if t.LastExecutedAt != nil {
+			result += fmt.Sprintf("    Last Run: %s\n", t.LastExecutedAt.Format("2006-01-02 15:04:05"))
+		}
+		if t.LastOutput != "" {
+			// Truncate output for display
+			output := t.LastOutput
+			if len(output) > 200 {
+				output = output[:200] + "..."
+			}
+			result += fmt.Sprintf("    Output: %s\n", output)
+		}
 	}
 
 	return &mcp.CallToolResult{
@@ -438,4 +452,87 @@ func (s *Server) handleScheduleTrigger(ctx context.Context, request *mcp.CallToo
 			&mcp.TextContent{Text: result},
 		},
 	}, sessionIDs, nil
+}
+
+type ScheduleHistoryParams struct {
+	ScheduleID string `json:"schedule_id"`
+	Limit      int    `json:"limit,omitempty"`
+}
+
+func (s *Server) handleScheduleHistory(ctx context.Context, request *mcp.CallToolRequest, params *ScheduleHistoryParams) (*mcp.CallToolResult, any, error) {
+	authCtx, err := requireAuth(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if params.ScheduleID == "" {
+		return nil, nil, fmt.Errorf("schedule_id is required")
+	}
+
+	// Get schedule to check access
+	sched, err := s.scheduleStore.Get(params.ScheduleID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get schedule: %w", err)
+	}
+
+	// Check access
+	if !auth.IsAdminScope(authCtx.Token.Scope) {
+		projectID := auth.ExtractProjectID(authCtx.Token.Scope)
+		hasAccess := false
+		for _, target := range sched.Targets {
+			if target.ProjectID == projectID {
+				hasAccess = true
+				break
+			}
+		}
+		if !hasAccess {
+			return nil, nil, fmt.Errorf("access denied to schedule %s", params.ScheduleID)
+		}
+	}
+
+	limit := params.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+
+	executions, err := s.scheduleStore.ListExecutions(params.ScheduleID, limit)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to list executions: %w", err)
+	}
+
+	if len(executions) == 0 {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("No execution history found for schedule %s.", params.ScheduleID)},
+			},
+		}, nil, nil
+	}
+
+	result := fmt.Sprintf("Execution history for %s (%d executions):\n\n", sched.Name, len(executions))
+	for _, exec := range executions {
+		result += fmt.Sprintf("• %s [%s]\n", exec.ExecutedAt.Format("2006-01-02 15:04:05"), exec.Status)
+		if exec.SessionID != "" {
+			result += fmt.Sprintf("  Session: %s\n", exec.SessionID)
+		}
+		if exec.DurationMs > 0 {
+			result += fmt.Sprintf("  Duration: %dms\n", exec.DurationMs)
+		}
+		if exec.Error != "" {
+			result += fmt.Sprintf("  Error: %s\n", exec.Error)
+		}
+		if exec.Output != "" {
+			output := exec.Output
+			if len(output) > 200 {
+				output = output[:200] + "..."
+			}
+			result += fmt.Sprintf("  Output: %s\n", output)
+		}
+		result += "\n"
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: result},
+		},
+	}, executions, nil
 }
