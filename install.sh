@@ -49,8 +49,11 @@ fi
 echo "Latest version: $VERSION"
 echo ""
 
-# Prompt for install location
-read -p "Install location [$DEFAULT_INSTALL_DIR]: " INSTALL_DIR
+# Set install location (use env var, or default if non-interactive)
+if [ -t 0 ]; then
+  # Interactive mode - prompt user
+  read -p "Install location [$DEFAULT_INSTALL_DIR]: " INSTALL_DIR
+fi
 INSTALL_DIR="${INSTALL_DIR:-$DEFAULT_INSTALL_DIR}"
 
 # Expand ~ if present
