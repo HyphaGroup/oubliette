@@ -77,19 +77,21 @@ Usage: oubliette [command] [options]
 
 Commands:
   (default)    Start the MCP server
-  init         Initialize ~/.oubliette with config and directories
+  init         Initialize Oubliette directory structure
   upgrade      Upgrade to latest version
   mcp          Configure MCP integration with AI tools
   token        Manage authentication tokens
   container    Manage containers (list, refresh, stop)
 
 Examples:
-  oubliette                      Start the server
-  oubliette init                 Set up ~/.oubliette
-  oubliette upgrade              Upgrade to latest version
-  oubliette upgrade --check      Check for updates without installing
-  oubliette mcp --setup droid    Configure MCP for Factory Droid
-  oubliette mcp --setup claude   Configure MCP for Claude Desktop
+  oubliette                              Start the server
+  oubliette init                         Set up ~/.oubliette
+  oubliette init --dir .                 Set up in current directory
+  oubliette upgrade                      Upgrade to latest version
+  oubliette upgrade --check              Check for updates without installing
+  oubliette mcp --setup droid            Configure MCP for Factory Droid
+  oubliette mcp --setup droid --dir .    Use current directory as oubliette home
+  oubliette mcp --setup droid --config ./mcp.json  Output to custom config file
 `, Version)
 }
 
@@ -405,19 +407,37 @@ func runServer() {
 }
 
 func cmdInit() {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: could not determine home directory: %v\n", err)
-		os.Exit(1)
+	// Parse init flags
+	fs := flag.NewFlagSet("init", flag.ExitOnError)
+	dirFlag := fs.String("dir", "", "Directory to initialize (default: ~/.oubliette)")
+	_ = fs.Parse(os.Args[2:])
+
+	var oublietteDir string
+	if *dirFlag != "" {
+		// Use specified directory
+		absDir, err := filepath.Abs(*dirFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: invalid directory: %v\n", err)
+			os.Exit(1)
+		}
+		oublietteDir = absDir
+	} else {
+		// Default to ~/.oubliette
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: could not determine home directory: %v\n", err)
+			os.Exit(1)
+		}
+		oublietteDir = filepath.Join(homeDir, ".oubliette")
 	}
 
-	oublietteDir := filepath.Join(homeDir, ".oubliette")
 	configDir := filepath.Join(oublietteDir, "config")
 	dataDir := filepath.Join(oublietteDir, "data")
 
-	// Check if already initialized
-	if _, err := os.Stat(oublietteDir); err == nil {
-		fmt.Printf("⚠️  %s already exists.\n", oublietteDir)
+	// Check if already initialized (look for config file, not just directory)
+	configFile := filepath.Join(configDir, "oubliette.jsonc")
+	if _, err := os.Stat(configFile); err == nil {
+		fmt.Printf("⚠️  %s is already initialized.\n", oublietteDir)
 		fmt.Print("Overwrite? [y/N]: ")
 		var response string
 		_, _ = fmt.Scanln(&response)
@@ -818,17 +838,28 @@ func cmdUpgrade(args []string) {
 }
 
 func cmdMCP(args []string) {
-	if len(args) < 2 || args[0] != "--setup" {
-		fmt.Println("Usage: oubliette mcp --setup <tool>")
+	// Parse mcp flags
+	fs := flag.NewFlagSet("mcp", flag.ExitOnError)
+	setup := fs.String("setup", "", "Tool to configure: droid, claude, claude-code")
+	configFlag := fs.String("config", "", "Output MCP config file path (overrides tool default)")
+	dirFlag := fs.String("dir", "", "Oubliette directory (default: ~/.oubliette)")
+	_ = fs.Parse(args)
+
+	if *setup == "" {
+		fmt.Println("Usage: oubliette mcp --setup <tool> [options]")
 		fmt.Println("")
 		fmt.Println("Tools:")
 		fmt.Println("  droid       Factory Droid (~/.factory/mcp.json)")
 		fmt.Println("  claude      Claude Desktop")
 		fmt.Println("  claude-code Claude Code VS Code extension")
+		fmt.Println("")
+		fmt.Println("Options:")
+		fmt.Println("  --config <path>  Output MCP config file (overrides tool default)")
+		fmt.Println("  --dir <path>     Oubliette directory (default: ~/.oubliette)")
 		os.Exit(1)
 	}
 
-	tool := args[1]
+	tool := *setup
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -836,23 +867,31 @@ func cmdMCP(args []string) {
 		os.Exit(1)
 	}
 
-	// Determine config file path based on tool
+	// Determine config file path
 	var configPath string
-	switch tool {
-	case "droid":
-		configPath = filepath.Join(homeDir, ".factory", "mcp.json")
-	case "claude":
-		if runtime.GOOS == "darwin" {
-			configPath = filepath.Join(homeDir, "Library", "Application Support", "Claude", "claude_desktop_config.json")
-		} else {
-			configPath = filepath.Join(homeDir, ".config", "claude", "claude_desktop_config.json")
+	if *configFlag != "" {
+		configPath, err = filepath.Abs(*configFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: invalid config path: %v\n", err)
+			os.Exit(1)
 		}
-	case "claude-code":
-		configPath = filepath.Join(homeDir, ".config", "Code", "User", "globalStorage", "anthropic.claude-code", "settings.json")
-	default:
-		fmt.Fprintf(os.Stderr, "Unknown tool: %s\n", tool)
-		fmt.Println("Supported tools: droid, claude, claude-code")
-		os.Exit(1)
+	} else {
+		switch tool {
+		case "droid":
+			configPath = filepath.Join(homeDir, ".factory", "mcp.json")
+		case "claude":
+			if runtime.GOOS == "darwin" {
+				configPath = filepath.Join(homeDir, "Library", "Application Support", "Claude", "claude_desktop_config.json")
+			} else {
+				configPath = filepath.Join(homeDir, ".config", "claude", "claude_desktop_config.json")
+			}
+		case "claude-code":
+			configPath = filepath.Join(homeDir, ".config", "Code", "User", "globalStorage", "anthropic.claude-code", "settings.json")
+		default:
+			fmt.Fprintf(os.Stderr, "Unknown tool: %s\n", tool)
+			fmt.Println("Supported tools: droid, claude, claude-code")
+			os.Exit(1)
+		}
 	}
 
 	fmt.Printf("Setting up MCP for %s...\n", tool)
@@ -860,7 +899,16 @@ func cmdMCP(args []string) {
 	fmt.Println("")
 
 	// Determine oubliette paths
-	oublietteDir := filepath.Join(homeDir, ".oubliette")
+	var oublietteDir string
+	if *dirFlag != "" {
+		oublietteDir, err = filepath.Abs(*dirFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: invalid directory: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		oublietteDir = filepath.Join(homeDir, ".oubliette")
+	}
 	dataDir := filepath.Join(oublietteDir, "data")
 	binaryPath := filepath.Join(oublietteDir, "bin", "oubliette")
 
