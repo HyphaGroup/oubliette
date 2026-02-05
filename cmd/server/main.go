@@ -384,8 +384,8 @@ func runServer() {
 	case sig := <-shutdownChan:
 		logger.Printf("⚠️  Received signal %v, initiating graceful shutdown...", sig)
 
-		// Create shutdown context with timeout
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		// Cancel context is available for future use if needed
+		_, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
 		// Close active sessions
@@ -418,8 +418,8 @@ func runServer() {
 		logger.Println("✅ Shutdown complete")
 		_ = logger.Close()
 
-		// Wait for context or exit
-		<-shutdownCtx.Done()
+		// Exit cleanly
+		os.Exit(0)
 	}
 }
 
