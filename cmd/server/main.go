@@ -1536,9 +1536,15 @@ func resolveOublietteDir(flagDir string) string {
 		return absDir
 	}
 
-	// 3. Check current directory for .oubliette
+	// 3. Check current directory for config/oubliette.jsonc (direct) or .oubliette/config/oubliette.jsonc
 	cwd, err := os.Getwd()
 	if err == nil {
+		// Check for config directly in cwd (e.g., /path/to/oubliette_test/config/oubliette.jsonc)
+		directConfig := filepath.Join(cwd, "config", "oubliette.jsonc")
+		if _, err := os.Stat(directConfig); err == nil {
+			return cwd
+		}
+		// Check for .oubliette subdirectory
 		localDir := filepath.Join(cwd, ".oubliette")
 		configFile := filepath.Join(localDir, "config", "oubliette.jsonc")
 		if _, err := os.Stat(configFile); err == nil {
