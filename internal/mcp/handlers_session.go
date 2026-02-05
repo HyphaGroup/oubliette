@@ -262,6 +262,11 @@ func (s *Server) handleSpawnPrime(ctx context.Context, params *SpawnParams) (*mc
 		return nil, nil, fmt.Errorf("project_id is required for prime gogol")
 	}
 
+	// Check for API credentials before attempting to spawn a session
+	if !s.HasAPICredentials() {
+		return nil, nil, fmt.Errorf("no API credentials configured - add credentials.factory.api_key or credentials.providers in oubliette.jsonc")
+	}
+
 	// Prepare environment using shared helper
 	env, err := s.prepareSessionEnvironment(ctx, params.ProjectID, params.WorkspaceID, params.CreateWorkspace, params.ExternalID, params.Source, params.Context)
 	if err != nil {

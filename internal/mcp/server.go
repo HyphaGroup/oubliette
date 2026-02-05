@@ -152,6 +152,23 @@ func (s *Server) GetSocketHandler() *SocketHandler {
 	return s.socketHandler
 }
 
+// HasAPICredentials returns true if any API credentials are configured
+// (either Factory API key or provider credentials)
+func (s *Server) HasAPICredentials() bool {
+	if s.credentials == nil {
+		return false
+	}
+	// Check for Factory API key
+	if key, ok := s.credentials.GetDefaultFactoryKey(); ok && key != "" {
+		return true
+	}
+	// Check for provider credentials
+	if cred, ok := s.credentials.GetDefaultProviderCredential(); ok && cred.APIKey != "" {
+		return true
+	}
+	return false
+}
+
 // Close shuts down the server and cleans up resources
 func (s *Server) Close() {
 	// Stop schedule runner first (waits for in-flight)
