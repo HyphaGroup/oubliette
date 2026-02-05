@@ -409,11 +409,12 @@ func (m *ActiveSessionManager) Remove(sessionID string) {
 		return
 	}
 
-	logger.Info("Removing session: %s (project: %s, workspace: %s, status: %s)", sessionID, sess.ProjectID, sess.WorkspaceID, sess.Status)
+	status := sess.GetStatus()
+	logger.Info("Removing session: %s (project: %s, workspace: %s, status: %s)", sessionID, sess.ProjectID, sess.WorkspaceID, status)
 
 	// Record metrics for session end
 	durationSeconds := time.Since(sess.StartedAt).Seconds()
-	metrics.RecordSessionEnd(sess.ProjectID, string(sess.Status), durationSeconds)
+	metrics.RecordSessionEnd(sess.ProjectID, string(status), durationSeconds)
 
 	// Close the executor safely
 	sess.CloseExecutor()
