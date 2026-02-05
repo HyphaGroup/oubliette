@@ -1,0 +1,14 @@
+{
+  "description": "Minimal runtime environment with essential tools",
+  "base_image": "debian:bookworm-slim",
+  "includes": [
+    "bash",
+    "curl",
+    "wget",
+    "git",
+    "jq",
+    "Factory Droid CLI",
+    "oubliette-relay",
+    "oubliette-client"
+  ]
+}

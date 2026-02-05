@@ -1,0 +1,34 @@
+version: "3.8"
+
+services:
+  oubliette:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    image: oubliette-server:latest
+    container_name: oubliette
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      # Docker socket for container orchestration
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Persistent data
+      - ./data:/app/data
+      - ./projects:/app/projects
+      - ./logs:/app/logs
+      # Relay sockets (shared with spawned containers)
+      - oubliette-sockets:/tmp/oubliette-sockets
+    environment:
+      - FACTORY_API_KEY=${FACTORY_API_KEY}
+      - DEFAULT_GITHUB_TOKEN=${DEFAULT_GITHUB_TOKEN}
+      - SERVER_ADDR=:8080
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  oubliette-sockets:

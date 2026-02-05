@@ -1,0 +1,14 @@
+{
+  "description": "Full development environment with languages and build tools",
+  "extends": "base",
+  "includes": [
+    "Node.js (via nvm)",
+    "Python (via uv)",
+    "Java (via SDKMAN)",
+    "Build tools (gcc, make, cmake)",
+    "GitHub CLI (gh)",
+    "GitLab CLI (glab)",
+    "Search tools (ripgrep, fd)",
+    "OpenSpec CLI"
+  ]
+}

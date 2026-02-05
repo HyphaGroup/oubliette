@@ -1,0 +1,46 @@
+.env
+.DS_Store
+*.log
+
+# Config files with secrets (keep examples)
+config/factory.json
+config/github-accounts.json
+config/models.json
+
+# Reference repos (keep script, ignore repos and config)
+reference/*
+!reference/update-repos.sh
+!reference/README.md
+
+# Air (hot reload)
+tmp/
+build-errors.log
+
+# Runtime data
+data/
+
+# Built binaries
+bin/
+
+# Local Factory configuration (contains auth tokens)
+.factory/
+*.backup.*
+
+# OpenCode local configuration
+.opencode/
+
+# Beads workflow state
+.beads/
+
+# Credentials (keep examples)
+credentials.json
+config/oubliette.jsonc
+config/credentials.json
+config/server.json
+config/config-defaults.json
+config/models.json
+
+# Local oubliette installation
+.oubliette/
+
+

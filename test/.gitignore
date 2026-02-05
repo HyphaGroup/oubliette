@@ -1,0 +1,10 @@
+# Test client binary
+oubliette-test
+
+# Go build artifacts
+*.test
+*.out
+
+# IDE
+.vscode/
+.idea/

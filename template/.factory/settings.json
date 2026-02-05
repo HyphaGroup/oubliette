@@ -1,0 +1,12 @@
+{
+  "sessionDefaultSettings": {
+    "autonomyMode": "auto-high",
+    "reasoningEffort": "medium"
+  },
+  "customModels": [],
+  "logoAnimation": "off",
+  "includeCoAuthoredByDroid": false,
+  "allowBackgroundProcesses": true,
+  "cloudSessionSync": false,
+  "hooks": {}
+}

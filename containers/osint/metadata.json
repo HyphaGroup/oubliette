@@ -1,0 +1,16 @@
+{
+  "description": "OSINT and reconnaissance tools for security research",
+  "extends": "base",
+  "includes": [
+    "Python with OSINT libraries",
+    "theHarvester",
+    "Shodan CLI",
+    "Amass",
+    "subfinder",
+    "httpx",
+    "nuclei",
+    "DNS tools (dig, nslookup)",
+    "nmap",
+    "whois"
+  ]
+}

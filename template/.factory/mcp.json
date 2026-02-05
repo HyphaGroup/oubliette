@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "oubliette-parent": {
+      "type": "stdio",
+      "command": "/usr/local/bin/oubliette-client",
+      "args": ["/mcp/relay.sock"],
+      "description": "Parent Oubliette MCP server for recursive gogol spawning"
+    }
+  },
+  "_comments": {
+    "http_proxy_example": "External MCP servers (like Ant) are accessed via the HTTP proxy. When session_message includes context.http_proxies, oubliette-client starts a proxy on 127.0.0.1:19999. Example MCP config for Ant:",
+    "ant_example": {
+      "type": "http",
+      "url": "http://127.0.0.1:19999/ant",
+      "description": "Ant MCP server via oubliette proxy (requires http_proxies in session context)"
+    }
+  }
+}

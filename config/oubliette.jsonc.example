@@ -1,0 +1,116 @@
+{
+  // Oubliette Configuration
+  // This is a JSONC file (JSON with Comments)
+
+  // Server settings
+  "server": {
+    "address": ":8080",              // Listen address
+    "agent_runtime": "auto",         // auto, droid, or opencode
+    "droid": {
+      "default_model": "sonnet"      // Model shorthand or full model ID
+    }
+  },
+
+  // API credentials
+  "credentials": {
+    "factory": {
+      "credentials": {
+        "default": {
+          "api_key": "fk-your-factory-api-key",
+          "description": "Primary Factory account"
+        }
+      },
+      "default": "default"
+    },
+    "github": {
+      "credentials": {
+        "personal": {
+          "token": "ghp_your-github-token",
+          "description": "Personal GitHub account"
+        }
+      },
+      "default": "personal"
+    },
+    "providers": {
+      "credentials": {
+        "anthropic-main": {
+          "provider": "anthropic",
+          "api_key": "sk-ant-your-anthropic-key",
+          "description": "Main Anthropic account"
+        }
+      },
+      "default": "anthropic-main"
+    }
+  },
+
+  // Default settings for new projects/sessions
+  "defaults": {
+    "limits": {
+      "max_recursion_depth": 3,
+      "max_agents_per_session": 50,
+      "max_cost_usd": 10.00
+    },
+    "agent": {
+      "runtime": "droid",            // droid or opencode
+      "model": "sonnet",             // Model shorthand
+      "autonomy": "off",             // off, semi, full
+      "reasoning": "medium",         // low, medium, high
+      "mcp_servers": {
+        "oubliette-parent": {
+          "type": "stdio",
+          "command": "/usr/local/bin/oubliette-client",
+          "args": ["/mcp/relay.sock"]
+        }
+      }
+    },
+    "container": {
+      "type": "dev"                  // base, dev, or custom image name
+    },
+    "backup": {
+      "enabled": false,              // Enable automatic backups
+      "directory": "data/backups",   // Backup directory
+      "retention": 7,                // Days to keep backups
+      "interval_hours": 24           // Hours between backups
+    }
+  },
+
+  // Container images (type name -> image name)
+  // Default images are pulled from ghcr.io unless OUBLIETTE_DEV=1
+  "containers": {
+    "base": "ghcr.io/hyphagroup/oubliette-base:latest",
+    "dev": "ghcr.io/hyphagroup/oubliette-dev:latest"
+  },
+
+  // Model definitions (shorthand -> full config)
+  "models": {
+    "models": {
+      "sonnet": {
+        "model": "claude-sonnet-4-5",
+        "displayName": "Sonnet 4.5",
+        "baseUrl": "https://api.anthropic.com",
+        "maxOutputTokens": 64000,
+        "provider": "anthropic"
+      },
+      "opus": {
+        "model": "claude-opus-4-5",
+        "displayName": "Opus 4.5",
+        "baseUrl": "https://api.anthropic.com",
+        "maxOutputTokens": 64000,
+        "provider": "anthropic"
+      },
+      "haiku": {
+        "model": "claude-haiku-4-5",
+        "displayName": "Haiku 4.5",
+        "baseUrl": "https://api.anthropic.com",
+        "maxOutputTokens": 64000,
+        "provider": "anthropic"
+      }
+    },
+    "defaults": {
+      "included_models": ["sonnet", "opus"],
+      "session_model": "sonnet",
+      "autonomy_mode": "auto-high",
+      "reasoning_effort": "medium"
+    }
+  }
+}

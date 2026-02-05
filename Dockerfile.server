@@ -1,0 +1,55 @@
+# Oubliette Server Container
+# Runs the Oubliette MCP server with Docker socket access for container orchestration
+
+FROM golang:1.24-bookworm AS builder
+
+WORKDIR /build
+
+# Copy go mod files first for caching
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source
+COPY . .
+
+# Build server binary
+RUN CGO_ENABLED=1 go build -o oubliette ./cmd/server
+
+# Runtime image
+FROM debian:bookworm-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    docker.io \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy binaries
+COPY --from=builder /build/oubliette /app/oubliette
+
+# Copy Dockerfile for building agent containers
+COPY internal/container/Dockerfile /app/Dockerfile
+
+# Copy template directory
+COPY template /app/template
+
+# Copy scripts
+COPY scripts /app/scripts
+
+# Create directories
+RUN mkdir -p /app/data /app/projects /app/logs
+
+# Default environment
+ENV SERVER_ADDR=:8080
+ENV RUNTIME_PREFERENCE=docker
+
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+CMD ["/app/oubliette"]
