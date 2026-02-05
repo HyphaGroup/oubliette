@@ -33,7 +33,8 @@ func NewStore(dataDir string) (*Store, error) {
 	}
 
 	dbPath := filepath.Join(dataDir, "auth.db")
-	db, err := sql.Open("sqlite", dbPath)
+	// Enable WAL mode and busy timeout for better concurrent access
+	db, err := sql.Open("sqlite", dbPath+"?_busy_timeout=5000&_journal_mode=WAL")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
