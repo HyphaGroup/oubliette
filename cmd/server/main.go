@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
@@ -106,11 +107,18 @@ func runServer() {
 	// Parse command-line flags
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	dirFlag := flag.String("dir", "", "Oubliette home directory (default: ~/.oubliette)")
+	daemonFlag := flag.Bool("daemon", false, "Run in background and exit after server is ready")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Printf("oubliette %s\n", Version)
 		os.Exit(0)
+	}
+
+	// Daemon mode: re-exec in background and wait for health check
+	if *daemonFlag {
+		runDaemon(*dirFlag)
+		return
 	}
 
 	// Determine oubliette directory with precedence:
@@ -1583,4 +1591,81 @@ func resolveOublietteDir(flagDir string) string {
 		log.Fatalf("Failed to get home directory: %v", err)
 	}
 	return filepath.Join(homeDir, ".oubliette")
+}
+
+// runDaemon starts the server in background and waits for it to be ready
+func runDaemon(dirFlag string) {
+	// Get the path to this executable
+	executable, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error finding executable: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Resolve config to get the server address for health check
+	oublietteDir := resolveOublietteDir(dirFlag)
+	configDir := filepath.Join(oublietteDir, "config")
+	cfg, err := config.LoadAll(configDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+	serverAddr := cfg.Server.Address
+	if serverAddr == "" {
+		serverAddr = ":8080"
+	}
+	// Extract port
+	port := serverAddr
+	if idx := strings.LastIndex(serverAddr, ":"); idx >= 0 {
+		port = serverAddr[idx+1:]
+	}
+	healthURL := fmt.Sprintf("http://localhost:%s/health", port)
+
+	// Check if already running
+	resp, err := http.Get(healthURL)
+	if err == nil {
+		_ = resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			fmt.Printf("✅ Oubliette already running on port %s\n", port)
+			os.Exit(0)
+		}
+	}
+
+	// Build command string for nohup
+	logFile := filepath.Join(oublietteDir, "data", "logs", "daemon.log")
+	cmdStr := fmt.Sprintf("nohup %s", executable)
+	if dirFlag != "" {
+		cmdStr += fmt.Sprintf(" --dir %s", dirFlag)
+	}
+	cmdStr += fmt.Sprintf(" > %s 2>&1 &", logFile)
+
+	// Start via shell with nohup
+	cmd := exec.Command("sh", "-c", cmdStr)
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error starting server: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Starting oubliette on port %s...\n", port)
+
+	// Wait for health check to pass
+	maxWait := 30 * time.Second
+	checkInterval := 500 * time.Millisecond
+	deadline := time.Now().Add(maxWait)
+
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(healthURL)
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				fmt.Printf("✅ Oubliette running on port %s\n", port)
+				os.Exit(0)
+			}
+		}
+		time.Sleep(checkInterval)
+	}
+
+	fmt.Fprintf(os.Stderr, "Error: server failed to start within %v\n", maxWait)
+	fmt.Fprintf(os.Stderr, "Check logs at: %s\n", logFile)
+	os.Exit(1)
 }
