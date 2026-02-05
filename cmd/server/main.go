@@ -990,13 +990,12 @@ func cmdMCP(args []string) {
 		mcpConfig["mcpServers"] = mcpServers
 	}
 
-	// Add/update oubliette entry
+	// Add/update oubliette entry (HTTP mode - oubliette is an HTTP MCP server)
 	mcpServers["oubliette"] = map[string]interface{}{
-		"command": binaryPath,
-		"args":    []string{"--stdio"},
-		"env": map[string]string{
-			"OUBLIETTE_TOKEN":    tokenID,
-			"OUBLIETTE_DATA_DIR": dataDir,
+		"type": "http",
+		"url":  "http://localhost:8080/mcp",
+		"headers": map[string]string{
+			"Authorization": "Bearer " + tokenID,
 		},
 	}
 
@@ -1022,13 +1021,14 @@ func cmdMCP(args []string) {
 	fmt.Printf("✅ MCP configured for %s\n", tool)
 	fmt.Println("")
 	fmt.Println("Next steps:")
+	fmt.Printf("  1. Start the Oubliette server: %s\n", binaryPath)
 	switch tool {
 	case "droid":
-		fmt.Println("  Restart Factory Droid to pick up the new MCP server.")
+		fmt.Println("  2. Restart Factory Droid to pick up the new MCP server.")
 	case "claude":
-		fmt.Println("  Restart Claude Desktop to pick up the new MCP server.")
+		fmt.Println("  2. Restart Claude Desktop to pick up the new MCP server.")
 	case "claude-code":
-		fmt.Println("  Restart VS Code to pick up the new MCP server.")
+		fmt.Println("  2. Restart VS Code to pick up the new MCP server.")
 	}
 }
 
