@@ -13,13 +13,13 @@ Always open `@/openspec/AGENTS.md` when the request:
 
 # Oubliette Development Guide
 
-**Project**: Containerized autonomous agent execution system  
-**Runtime**: Factory AI Droid / OpenCode
+**Project**: Containerized autonomous agent execution system
+**Runtime**: OpenCode (sole runtime)
 
 ## Critical Philosophy
 
 > **NO BACKWARDS COMPATIBILITY. NO LEGACY CODE.**
-> 
+>
 > This codebase operates on a **rip-and-replace** model:
 > - Remove old code completely - don't wrap in feature flags
 > - Update all callers immediately when changing interfaces
@@ -34,44 +34,33 @@ Always open `@/openspec/AGENTS.md` when the request:
 ## Quick Start
 
 ```bash
-# Build
-./build.sh
-
-# Development with hot reload
-./dev.sh
-
-# Run tests
-cd test/cmd && go run . --test              # Integration tests
-cd test/cmd && go run . --coverage-report   # Must be 100%
+./build.sh                                  # Build
+./dev.sh                                    # Hot reload dev
 go test ./... -short                        # Unit tests
-
-# Pattern check
-./tools/check-patterns.sh
+cd test/cmd && go run . --test              # Integration tests
+cd test/cmd && go run . --coverage-report   # Coverage (must be 100%)
 ```
 
-## Documentation Map
+## Documentation
 
 | Document | Purpose |
 |----------|---------|
-| [docs/INSTALLATION.md](docs/INSTALLATION.md) | Quick install, init, MCP setup, upgrading |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Sessions, workspaces, container runtime, streaming |
-| [docs/PATTERNS.md](docs/PATTERNS.md) | Design patterns (Manager, Handler, Config, Locking) |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Sessions, containers, streaming, relay |
+| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | oubliette.jsonc, models, credentials |
+| [docs/PATTERNS.md](docs/PATTERNS.md) | Manager, Handler, Locking, Ring Buffer patterns |
+| [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md) | Tool development, caller relay, socket protocol |
 | [docs/TESTING.md](docs/TESTING.md) | Testing strategy, coverage requirements |
-| [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md) | Tool development, caller relay, container tools |
-| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Config files, models, environment variables |
-| [docs/BACKUPS.md](docs/BACKUPS.md) | Backup automation, configuration, restore procedures |
-| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Production deployment guide |
+| [docs/INSTALLATION.md](docs/INSTALLATION.md) | Install, init, MCP setup |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Production deployment, TLS, systemd |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Runbook, troubleshooting, monitoring |
+| [docs/BACKUPS.md](docs/BACKUPS.md) | Backup configuration and restore |
 
 ## Core Concepts
 
-**Gogol** = An executing agent session instance (Droid or OpenCode) running in a container.
-
-**Workspace** = Isolated execution environment within a project with inherited runtime configuration.
-
-**Container Runtime** = Docker or Apple Container (auto-detected). Both provide identical functionality.
-
-**Schedule** = Cron-based recurring task that executes prompts against project/workspace targets.
+- **Gogol** = An executing agent session (OpenCode) running in a container
+- **Workspace** = Isolated execution environment within a project
+- **Container Runtime** = Docker or Apple Container (auto-detected)
+- **Schedule** = Cron-based recurring task with session pinning
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 
@@ -79,115 +68,56 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 
 ```
 oubliette/
-├── cmd/                     # CLI binaries
-│   ├── server/              # Main MCP server (includes token commands)
+├── cmd/
+│   ├── server/              # Main MCP server + CLI commands
 │   ├── oubliette-client/    # In-container MCP proxy
-│   └── oubliette-relay/     # Socket relay
-├── internal/                # Private packages
+│   └── oubliette-relay/     # Socket relay for nested sessions
+├── internal/
 │   ├── agent/               # Agent runtime abstraction
-│   │   ├── config/          # Unified config translation
-│   │   ├── droid/           # Factory Droid implementation
-│   │   └── opencode/        # OpenCode implementation
-│   ├── container/           # Container runtime abstraction
-│   ├── mcp/                 # MCP protocol handlers
+│   │   ├── config/          # Config translation to opencode.json
+│   │   └── opencode/        # OpenCode runtime implementation
+│   ├── container/           # Container runtime (Docker/Apple Container)
+│   ├── mcp/                 # MCP server + unified tool handlers
 │   ├── project/             # Project/workspace management
 │   ├── session/             # Session management + event buffer
-│   ├── schedule/            # Cron-based task scheduling
-│   └── ...
+│   ├── schedule/            # Cron scheduling with session pinning
+│   └── config/              # Server configuration (oubliette.jsonc)
+├── containers/              # Container image definitions (base, dev)
 ├── test/                    # Integration tests
-│   ├── cmd/                 # Test runner
-│   └── pkg/suites/          # Test suites
-├── docs/                    # Documentation
-└── config/                  # Configuration files
+└── docs/                    # Documentation
 ```
 
 ## Key Patterns
 
-**1. Manager Pattern** - CRUD operations for resources
-```go
-func (m *Manager) Create(ctx context.Context, req CreateRequest) (*Resource, error)
-func (m *Manager) Get(resourceID string) (*Resource, error)
-func (m *Manager) List(filter *ListFilter) ([]*Resource, error)
-func (m *Manager) Delete(resourceID string) error
-```
+See [docs/PATTERNS.md](docs/PATTERNS.md) for full details.
 
-**2. Handler Pattern** - MCP tool handlers delegate to managers
-```go
-func (s *Server) handleTool(ctx context.Context, req *mcp.CallToolRequest, params *Params) (*mcp.CallToolResult, any, error) {
-    // 1. Validate
-    // 2. Delegate to manager
-    // 3. Format response
-}
-```
+- **Manager Pattern**: CRUD via Create/Get/List/Delete
+- **Handler Pattern**: MCP handlers validate, delegate to managers, format response
+- **Error Wrapping**: Always `fmt.Errorf("context: %w", err)`
 
-**3. Error Wrapping** - Always use `%w`
-```go
-return fmt.Errorf("failed to create project %s: %w", name, err)
-```
+## Commit Format
 
-See [docs/PATTERNS.md](docs/PATTERNS.md) for full pattern documentation.
-
-## Testing Strategy
-
-**Spec-driven development** via OpenSpec:
-- **Integration tests** are primary (100% MCP tool coverage required)
-- **Unit tests** only for pure logic with complex edge cases
-- **Smoke tests** for post-deploy verification
-
-```bash
-# Integration tests (primary)
-cd test/cmd && go run . --test
-
-# Coverage report (must pass)
-cd test/cmd && go run . --coverage-report
-```
-
-See [docs/TESTING.md](docs/TESTING.md) for full testing guidelines.
-
-## Development Workflow
-
-### Before Starting
-```bash
-grep -A 20 "Pattern" docs/PATTERNS.md  # Review patterns
-git diff main..HEAD                      # Check what you're changing
-```
-
-### Before Committing
-```bash
-gofmt -w .                              # Format
-./tools/check-patterns.sh               # Pattern check
-cd test/cmd && go run . --test          # Tests
-cd test/cmd && go run . --coverage-report  # Coverage
-```
-
-### Commit Format
 ```
 <type>: <description>
 
 Types: feat, fix, docs, refactor, test, chore
 ```
 
+## Before Committing
+
+```bash
+gofmt -w .
+golangci-lint run --enable gocritic ./cmd/... ./internal/...
+go test ./... -short
+cd test/cmd && go run . --test
+```
+
 ## Landing the Plane
 
-**When ending a session**, complete ALL steps:
-
-1. **File issues** for remaining work
-2. **Run quality gates** (tests, lints, builds)
-3. **PUSH TO REMOTE** - Work is NOT complete until pushed:
-   ```bash
-   git pull --rebase
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-
-## Getting Help
-
-- **Patterns**: [docs/PATTERNS.md](docs/PATTERNS.md)
-- **Architecture**: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- **Testing**: [docs/TESTING.md](docs/TESTING.md)
-- **Bug Reports**: Include steps to reproduce, logs, environment
+1. Run quality gates (tests, lints, builds)
+2. **Push to remote** - work is NOT complete until pushed
 
 ---
 
-**Last Updated**: 2025-01-29
+**Last Updated**: 2026-02-06
 </coding_guidelines>

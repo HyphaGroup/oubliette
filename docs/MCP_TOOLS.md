@@ -1,6 +1,6 @@
 # MCP Tool Development
 
-This document covers developing MCP tools for Oubliette, including the caller tool relay and exposing tools to container droids.
+This document covers developing MCP tools for Oubliette, including the caller tool relay and exposing tools to container agents.
 
 ## Adding a New Tool
 
@@ -205,9 +205,9 @@ The Caller Tool Relay enables agents inside Oubliette containers to call tools o
 ### How It Works
 
 ```
-Droid → oubliette-client → socket → oubliette-server → SSE event → Caller
+Agent → oubliette-client → socket → oubliette-server → SSE event → Caller
                                                                       ↓
-Droid ← oubliette-client ← socket ← oubliette-server ← MCP call ← Caller executes
+Agent ← oubliette-client ← socket ← oubliette-server ← MCP call ← Caller executes
 ```
 
 1. **Caller declares tools**: Pass `caller_id` and `caller_tools` in `session_message` context
@@ -284,9 +284,9 @@ Agents inside containers can access Oubliette's MCP tools when configured with a
 ### How It Works
 
 ```
-Droid → oubliette-client → socket → oubliette-server → Tool Handler
+Agent → oubliette-client → socket → oubliette-server → Tool Handler
                                                             ↓
-Droid ← oubliette-client ← socket ← oubliette-server ← Result
+Agent ← oubliette-client ← socket ← oubliette-server ← Result
 ```
 
 1. **API key provided**: Set `OUBLIETTE_API_KEY` environment variable in container

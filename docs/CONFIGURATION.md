@@ -1,63 +1,39 @@
 # Configuration
 
-This document covers all configuration options for Oubliette.
-
-## Config File
-
-All configuration is in a single JSONC file:
-
-```
-~/.oubliette/config/oubliette.jsonc
-```
+All configuration is in a single JSONC file: `config/oubliette.jsonc` (or `~/.oubliette/config/oubliette.jsonc` when installed).
 
 Created by `oubliette init`, or copy from `config/oubliette.jsonc.example`.
 
-## Full Configuration Reference
+## Full Reference
 
 ```jsonc
 {
-  // Server settings
   "server": {
-    "address": ":8080",              // Listen address
-    "agent_runtime": "auto",         // auto, droid, or opencode
-    "droid": {
-      "default_model": "sonnet"      // Model shorthand or full ID
-    }
+    "address": ":8080"
   },
 
-  // API credentials
   "credentials": {
-    "factory": {
+    "github": {
       "credentials": {
         "default": {
-          "api_key": "fk-your-factory-api-key",
-          "description": "Primary Factory account"
+          "token": "ghp_xxx",
+          "description": "GitHub account"
         }
       },
       "default": "default"
     },
-    "github": {
-      "credentials": {
-        "personal": {
-          "token": "ghp_your-github-token",
-          "description": "Personal GitHub account"
-        }
-      },
-      "default": "personal"
-    },
     "providers": {
       "credentials": {
-        "anthropic-main": {
+        "anthropic": {
           "provider": "anthropic",
-          "api_key": "sk-ant-your-key",
-          "description": "Main Anthropic account"
+          "api_key": "sk-ant-xxx",
+          "description": "Anthropic API"
         }
       },
-      "default": "anthropic-main"
+      "default": "anthropic"
     }
   },
 
-  // Default settings for new projects/sessions
   "defaults": {
     "limits": {
       "max_recursion_depth": 3,
@@ -65,91 +41,81 @@ Created by `oubliette init`, or copy from `config/oubliette.jsonc.example`.
       "max_cost_usd": 10.00
     },
     "agent": {
-      "runtime": "droid",            // droid or opencode
-      "model": "sonnet",             // Model shorthand
-      "autonomy": "off",             // off, low, medium, high
-      "reasoning": "medium"          // off, low, medium, high
+      "model": "opus",
+      "autonomy": "off",
+      "reasoning": "medium"
     },
     "container": {
-      "type": "dev"                  // Default container type
+      "type": "dev"
     },
     "backup": {
-      "enabled": false,              // Enable automatic backups
-      "directory": "data/backups",   // Backup directory
-      "retention": 7,                // Days to keep
-      "interval_hours": 24           // Hours between backups
+      "enabled": false,
+      "directory": "data/backups",
+      "retention": 7,
+      "interval_hours": 24
     }
   },
 
-  // Container type -> image name mappings
   "containers": {
     "base": "ghcr.io/hyphagroup/oubliette-base:latest",
     "dev": "ghcr.io/hyphagroup/oubliette-dev:latest"
   },
 
-  // Model definitions
   "models": {
     "models": {
+      "opus": {
+        "model": "claude-opus-4-6",
+        "displayName": "Opus 4.6 1M",
+        "baseUrl": "https://api.anthropic.com",
+        "maxOutputTokens": 128000,
+        "provider": "anthropic",
+        "extraHeaders": {
+          "anthropic-beta": "context-1m-2025-08-07"
+        }
+      },
       "sonnet": {
         "model": "claude-sonnet-4-5",
         "displayName": "Sonnet 4.5",
-        "baseUrl": "https://api.anthropic.com",
-        "maxOutputTokens": 64000,
         "provider": "anthropic"
       }
     },
     "defaults": {
-      "included_models": ["sonnet", "opus"],
-      "session_model": "sonnet"
+      "session_model": "opus"
     }
   }
 }
 ```
 
-## Section Details
-
-### server
-
-| Field | Description | Default |
-|-------|-------------|---------|
-| `address` | Server listen address | `:8080` |
-| `agent_runtime` | Runtime: `auto`, `droid`, `opencode` | `auto` |
-| `droid.default_model` | Default model shorthand | `sonnet` |
-
-### credentials
-
-Multiple credentials per type, with a default:
+## Credentials
 
 | Type | Purpose | Env Var Injected |
 |------|---------|------------------|
-| `factory` | Factory AI Droid runtime | `FACTORY_API_KEY` |
 | `github` | Repository cloning | `GITHUB_TOKEN` |
-| `providers` | AI model access | Provider-specific |
+| `providers` | AI model access | Provider-specific (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.) |
 
-Provider environment variables:
-- `anthropic` → `ANTHROPIC_API_KEY`
-- `openai` → `OPENAI_API_KEY`
-- `google` → `GOOGLE_API_KEY`
+At least one provider credential is required.
 
-### defaults.agent
+## Agent Defaults
 
 | Field | Values | Description |
 |-------|--------|-------------|
+| `model` | Model alias from `models` section | Which model to use |
 | `autonomy` | `off`, `low`, `medium`, `high` | Permission prompting level |
 | `reasoning` | `off`, `low`, `medium`, `high` | Extended thinking budget |
 
-### containers
+## Model Extra Headers
 
-Maps container type names to image references. Default images from ghcr.io:
+Models can include custom HTTP headers via `extraHeaders`. Used for beta features like Anthropic's 1M context window:
 
 ```jsonc
-"containers": {
-  "base": "ghcr.io/hyphagroup/oubliette-base:latest",
-  "dev": "ghcr.io/hyphagroup/oubliette-dev:latest"
+"extraHeaders": {
+  "anthropic-beta": "context-1m-2025-08-07"
 }
 ```
 
-Add custom container types:
+## Container Types
+
+Maps container type names to image references:
 
 ```jsonc
 "containers": {
@@ -163,38 +129,25 @@ See [CONTAINER_TYPES.md](CONTAINER_TYPES.md) for details.
 
 ## Development Mode
 
-Set `OUBLIETTE_DEV=1` to use locally-built images:
-
 ```bash
 ./build.sh                        # Build local images
 OUBLIETTE_DEV=1 ./bin/oubliette   # Use local images
 ```
 
-In dev mode, containers default to local names:
-- `base` → `oubliette-base:latest`
-- `dev` → `oubliette-dev:latest`
-
-## Project Overrides
-
-Projects can override defaults via `project_create`:
-
-```json
-{
-  "name": "my-project",
-  "max_recursion_depth": 5,
-  "max_agents_per_session": 100,
-  "max_cost_usd": 50.0,
-  "autonomy": "medium",
-  "reasoning": "high",
-  "container_type": "base"
-}
-```
+In dev mode, containers resolve to local names: `oubliette-base:latest`, `oubliette-dev:latest`.
 
 ## Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OUBLIETTE_DEV` | Use local images if `1` | (unset) |
+| `OUBLIETTE_DEV` | Use locally-built images | (unset) |
+| `OUBLIETTE_HOME` | Config/data directory | `~/.oubliette` |
 | `CONTAINER_RUNTIME` | `auto`, `docker`, `apple-container` | `auto` |
 
-Most settings should be in `oubliette.jsonc` rather than environment variables.
+## Config Precedence
+
+The server locates its config directory in this order:
+1. `--dir` flag
+2. `OUBLIETTE_HOME` environment variable
+3. `./.oubliette` (current directory)
+4. `~/.oubliette` (home directory)

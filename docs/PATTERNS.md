@@ -9,7 +9,6 @@ This document describes the key design patterns used throughout Oubliette. Under
 - [Configuration Pattern](#configuration-pattern)
 - [Per-Entity Locking Pattern](#per-entity-locking-pattern)
 - [Ring Buffer Pattern](#ring-buffer-pattern)
-- [Runtime Abstraction Pattern](#runtime-abstraction-pattern)
 - [Session Lifecycle](#session-lifecycle)
 - [Workspace Resolution](#workspace-resolution)
 
@@ -127,7 +126,7 @@ func (m *Manager) Get(projectID string) (*Project, error) {
 
 - `internal/project/manager.go` - Project lifecycle
 - `internal/session/manager.go` - Session lifecycle
-- `internal/droid/manager.go` - Droid execution management
+- `internal/session/streaming.go` - Bidirectional streaming sessions
 
 ---
 
@@ -214,65 +213,31 @@ func requireProjectAccess(ctx context.Context, projectID string) (*AuthContext, 
 
 ## Configuration Pattern
 
-Configuration uses Viper with a three-tier precedence: environment variables > config file > defaults.
+Configuration is loaded from a single `oubliette.jsonc` file. See [CONFIGURATION.md](CONFIGURATION.md) for the full reference.
 
-### Structure
-
-```go
-// Config struct with mapstructure tags
-type Config struct {
-    Server    ServerConfig    `mapstructure:"server"`
-    Auth      AuthConfig      `mapstructure:"auth"`
-    // ... grouped by concern
-}
-
-type ServerConfig struct {
-    Address string `mapstructure:"address"`
-}
-```
-
-### Loading Priority
-
-1. **Environment variables** (highest priority)
-   - Format: `OUBLIETTE_SECTION_KEY` (e.g., `OUBLIETTE_SERVER_ADDRESS`)
-   - Also supports legacy format without prefix (e.g., `SERVER_ADDR`)
-
-2. **Config file** (config.yaml)
-   - Search paths: `./config.yaml`, `./config/config.yaml`, `/etc/oubliette/config.yaml`
-   - Or explicit path via `-config` flag
-
-3. **Defaults** (lowest priority)
-   - Set in `setDefaults(v *viper.Viper)` function
-
-### Usage Pattern
+### Loading
 
 ```go
-// Load configuration
-cfg, err := config.Load(configPath)
-if err != nil {
-    log.Fatalf("Failed to load config: %v", err)
-}
-
-// Validate required fields
-if cfg.Auth.FactoryAPIKey == "" {
-    log.Fatal("FACTORY_API_KEY is required")
-}
-
-// Use configuration
-server := NewServer(cfg.Server.Address, cfg.Auth.FactoryAPIKey)
+cfg, err := config.LoadUnifiedConfig(configDir)
 ```
+
+### Config Precedence
+
+The server locates its config directory: `--dir` → `OUBLIETTE_HOME` → `./.oubliette` → `~/.oubliette`
 
 ### Adding New Configuration
 
-1. Add field to appropriate Config struct
-2. Add `mapstructure` tag matching YAML key
-3. Add default in `setDefaults()` if applicable
-4. Document in `config.yaml.example`
+1. Add field to the appropriate struct in `internal/config/`
+2. Add JSON tag
+3. Set default in `applyDefaults()`
+4. Document in `config/oubliette.jsonc.example`
 
 ### Files
 
-- `internal/config/config.go` - Configuration types and loading
-- `config.yaml.example` - Documented example configuration
+- `internal/config/unified.go` - Unified config loading
+- `internal/config/models.go` - Model definitions
+- `internal/config/credentials.go` - Credential management
+- `config/oubliette.jsonc.example` - Documented example
 
 ---
 
@@ -411,88 +376,6 @@ Client                          Server
 
 ---
 
-## Runtime Abstraction Pattern
-
-Provides a unified interface for container operations that works with both Docker and Apple Container.
-
-### Interface
-
-```go
-// internal/container/runtime.go
-
-type Runtime interface {
-    // Lifecycle
-    Create(ctx context.Context, config CreateConfig) (string, error)
-    Start(ctx context.Context, containerID string) error
-    Stop(ctx context.Context, containerID string) error
-    Remove(ctx context.Context, containerID string, force bool) error
-    
-    // Execution
-    Exec(ctx context.Context, containerID string, config ExecConfig) (*ExecResult, error)
-    ExecInteractive(ctx context.Context, containerID string, config ExecConfig) (*InteractiveExec, error)
-    
-    // Inspection
-    Inspect(ctx context.Context, containerID string) (*ContainerInfo, error)
-    Status(ctx context.Context, containerID string) (ContainerStatus, error)
-    Logs(ctx context.Context, containerID string, opts LogsOptions) (string, error)
-    
-    // Images
-    Build(ctx context.Context, config BuildConfig) error
-    
-    // Health
-    Ping(ctx context.Context) error
-    Close() error
-    
-    // Metadata
-    Name() string
-    IsAvailable() bool
-}
-```
-
-### Implementations
-
-Both implementations provide identical functionality:
-
-```
-internal/container/
-├── runtime.go              # Interface definition
-├── docker/
-│   └── runtime.go          # Docker SDK implementation
-└── applecontainer/
-    └── runtime.go          # Apple Container CLI implementation
-```
-
-### Runtime Selection
-
-```go
-// internal/container/factory.go
-
-func NewRuntime(preference string) (Runtime, error) {
-    switch preference {
-    case "docker":
-        return docker.NewRuntime()
-    case "apple-container":
-        return applecontainer.NewRuntime()
-    case "auto", "":
-        // Prefer Apple Container on macOS ARM64
-        if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
-            if rt, err := applecontainer.NewRuntime(); err == nil && rt.IsAvailable() {
-                return rt, nil
-            }
-        }
-        return docker.NewRuntime()
-    }
-    return nil, fmt.Errorf("unknown runtime: %s", preference)
-}
-```
-
-### Files
-
-- `internal/container/runtime.go` - Interface and types
-- `internal/container/factory.go` - Runtime selection
-- `internal/container/docker/runtime.go` - Docker implementation
-- `internal/container/applecontainer/runtime.go` - Apple Container implementation
-
 ---
 
 ## Session Lifecycle
@@ -518,9 +401,10 @@ Sessions progress through defined states with specific transitions.
 |------|-----|---------|
 | - | created | `session.Manager.Create()` |
 | created | running | `ActiveSession.Start()` |
-| running | completed | Droid exits with success |
-| running | failed | Droid exits with error, timeout, or crash |
-| running | failed | `RecoverStaleSessions()` (on server restart) |
+| running | idle | Turn completes (completion event) |
+| idle | running | New message received |
+| running/idle | completed | Executor exits or session ended |
+| running | failed | Error, timeout, or crash |
 
 ### Key Components
 
@@ -534,7 +418,7 @@ Session (metadata)          ActiveSession (runtime)
 ├── ParentSessionID         ├── EventBuffer (1000 events)
 ├── ChildSessionIDs         └── cancel func
 ├── ExplorationID
-├── DroidSessionID
+├── RuntimeSessionID
 ├── StartedAt
 └── CompletedAt
 ```

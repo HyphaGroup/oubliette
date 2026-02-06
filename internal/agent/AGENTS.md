@@ -1,33 +1,24 @@
-# Agent Runtime Development Guide
+# Agent Runtime
 
-## Overview
+Oubliette uses OpenCode as its sole agent runtime.
 
-Oubliette uses OpenCode as its agent runtime. The `agent.Runtime` and `agent.StreamingExecutor` interfaces provide a thin abstraction layer.
-
-## Runtime Interface
+## Interface
 
 ```go
 type Runtime interface {
-    ExecuteStreaming(ctx context.Context, request *ExecuteRequest) (StreamingExecutor, error)
-    Execute(ctx context.Context, request *ExecuteRequest) (*ExecuteResponse, error)
+    ExecuteStreaming(ctx context.Context, req *ExecuteRequest) (StreamingExecutor, error)
+    Execute(ctx context.Context, req *ExecuteRequest) (*ExecuteResponse, error)
     Ping(ctx context.Context) error
     Close() error
 }
 ```
 
-| Method | Purpose |
-|--------|---------|
-| `Execute` | Single-turn execution (blocking) |
-| `ExecuteStreaming` | Start bidirectional streaming session |
-| `Ping` | Health check |
-| `Close` | Release resources |
-
-## StreamingExecutor Interface
+## StreamingExecutor
 
 ```go
 type StreamingExecutor interface {
     SendMessage(message string) error
-    Cancel() error
+    Cancel() error              // POST /session/:id/abort
     Events() <-chan *StreamEvent
     Errors() <-chan error
     Done() <-chan struct{}
@@ -38,49 +29,37 @@ type StreamingExecutor interface {
 }
 ```
 
-## OpenCode Package
+## Event Types
+
+Events are normalized into `StreamEvent` with these types:
+
+| Type | Description |
+|------|-------------|
+| `system` | Step boundaries, status changes |
+| `message` | Consolidated assistant/user text |
+| `delta` | Streaming token chunks |
+| `tool_call` | Tool invocation with parameters |
+| `tool_result` | Tool result or error |
+| `completion` | Turn complete (includes final response text) |
+| `error` | Error event |
+
+Noise is filtered at the source (`parseSSEEvent`): `message.updated`, `server.connected`, `server.heartbeat`, and duplicate `session.idle` events are dropped before entering the event channel.
+
+## Reasoning
+
+Reasoning level is passed per-message as OpenCode's `variant` parameter. OpenCode handles provider-specific translation natively.
+
+## Package Layout
 
 ```
-internal/agent/opencode/
-├── runtime.go      # Runtime implementation (server lifecycle per container)
-├── executor.go     # StreamingExecutor with SSE event stream
-├── protocol.go     # HTTP client, SSE reader
-├── server.go       # Server lifecycle (Start, Stop, health checks)
-└── events.go       # SSE event type constants
+internal/agent/
+├── runtime.go          # Runtime + StreamingExecutor interfaces
+├── types.go            # StreamEvent, ExecuteRequest
+├── executor.go         # Executor helpers
+└── opencode/
+    ├── runtime.go      # Runtime impl (server lifecycle per container)
+    ├── executor.go     # StreamingExecutor with SSE events
+    ├── protocol.go     # HTTP client (prompt_async, abort, events SSE)
+    ├── server.go       # Server lifecycle (start, stop, health)
+    └── events.go       # SSE event type constants
 ```
-
-**Communication**: HTTP REST + SSE (server on port 4096)
-
-```
-┌─────────────┐     POST /session/:id/prompt_async     ┌──────────────┐
-│  Executor   │ ─────────────────────────────────────▶ │  opencode    │
-│             │                                        │  serve       │
-│             │ ◀───────────────────────────────────── │  (HTTP)      │
-└─────────────┘     GET /event (SSE stream)            └──────────────┘
-```
-
-## Event Normalization
-
-All events are converted to `agent.StreamEvent`:
-
-```go
-type StreamEvent struct {
-    Type      StreamEventType  // system, message, tool_call, tool_result, completion, error
-    Role      string           // user, assistant
-    Text      string           // Message text
-    ToolName  string           // For tool calls
-    ToolID    string           // Tool invocation ID
-    FinalText string           // Final response text (completion)
-}
-```
-
-## Reasoning via Variant
-
-Reasoning level is passed per-message as OpenCode's `variant` parameter in `prompt_async`. OpenCode's `ProviderTransform.variants()` handles provider-specific translation:
-- **Anthropic**: `high` → `{thinking: {type: "enabled", budgetTokens: 16000}}`
-- **OpenAI**: `high` → `{reasoningEffort: "high"}`
-- **Google**: `high` → `{thinkingLevel: "high"}`
-
-## Session Abort
-
-`Cancel()` calls OpenCode's `POST /session/:id/abort` endpoint.
