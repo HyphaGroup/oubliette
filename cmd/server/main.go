@@ -86,6 +86,7 @@ Commands:
 
 Server Options:
   --dir <path>       Oubliette home directory
+  --daemon           Start server in background and exit when ready
 
 Config Precedence (for server):
   1. --dir flag
@@ -96,6 +97,7 @@ Config Precedence (for server):
 Examples:
   oubliette                              Start the server (auto-detect config)
   oubliette --dir /path/to/oubliette     Start with specific config directory
+  oubliette --daemon                     Start in background
   oubliette init                         Set up ~/.oubliette
   oubliette init --dir .                 Set up in current directory
   oubliette mcp --setup droid            Configure MCP for Factory Droid

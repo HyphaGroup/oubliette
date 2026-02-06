@@ -37,14 +37,17 @@ curl -fsSL https://raw.githubusercontent.com/HyphaGroup/oubliette/main/install.s
 # Initialize (creates config and auth token)
 oubliette init
 
-# Configure MCP for your AI tool
+# Configure MCP for your AI tool (creates auth token automatically)
 oubliette mcp --setup droid    # or: claude, claude-code
 
 # Add your API keys
 # Edit ~/.oubliette/config/oubliette.jsonc
 
-# Start the server
-oubliette --config-dir ~/.oubliette/config
+# Start the server (foreground)
+oubliette
+
+# Or start in background (daemon mode)
+oubliette --daemon
 ```
 
 See [docs/INSTALLATION.md](docs/INSTALLATION.md) for detailed setup instructions.
@@ -378,7 +381,7 @@ Configure your MCP client (e.g., Claude Desktop, Factory Droid):
   - Returns: schedule_id
 - **schedule_list** - List all schedules with optional filtering
   - Parameters: `project_id` (optional), `enabled` (optional)
-- **schedule_get** - Get schedule details by ID
+- **schedule_get** - Get schedule details by ID (includes session_id, last_output per target)
   - Parameters: `schedule_id`
 - **schedule_update** - Update schedule properties
   - Parameters: `schedule_id`, `name`, `cron`, `enabled`, `targets[]`, `overlap_behavior`
@@ -387,6 +390,11 @@ Configure your MCP client (e.g., Claude Desktop, Factory Droid):
 - **schedule_trigger** - Manually trigger a schedule immediately
   - Parameters: `schedule_id`
   - Note: Bypasses cron timing, respects overlap_behavior
+- **schedule_history** - Get execution history for a schedule
+  - Parameters: `schedule_id`, `limit` (optional, default 50)
+  - Returns: Past executions with status, output, error, duration
+
+**Session Pinning**: Each schedule target maintains a persistent session that is reused across runs. If a session is closed, it's automatically resumed on the next execution.
 
 ### Token Management (Admin Only)
 

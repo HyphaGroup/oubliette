@@ -37,7 +37,7 @@ oubliette init
 ```
 
 This creates:
-- `~/.oubliette/config/` - Configuration files
+- `~/.oubliette/config/` - Configuration files (including `oubliette.jsonc`)
 - `~/.oubliette/data/` - Runtime data (projects, logs, backups)
 - An admin token for API access
 
@@ -56,46 +56,75 @@ oubliette mcp --setup claude
 oubliette mcp --setup claude-code
 ```
 
-This adds Oubliette as an MCP server to your tool's configuration.
+This adds Oubliette as an MCP server to your tool's configuration, creating an auth token automatically.
 
 ## Add API Keys
 
-Edit `~/.oubliette/config/credentials.json` to add your API keys:
+Edit `~/.oubliette/config/oubliette.jsonc` to add your API keys:
 
-```json
+```jsonc
 {
-  "factory": {
-    "default": "main",
-    "keys": {
-      "main": "your-factory-api-key"
-    }
-  },
-  "github": {
-    "default": "main",
-    "tokens": {
-      "main": "your-github-token"
-    }
-  },
-  "providers": {
-    "default": "anthropic",
-    "keys": {
-      "anthropic": "your-anthropic-key"
+  "credentials": {
+    "factory": {
+      "credentials": {
+        "default": {
+          "api_key": "fk-your-factory-api-key"
+        }
+      },
+      "default": "default"
+    },
+    "github": {
+      "credentials": {
+        "default": {
+          "token": "ghp_your-github-token"
+        }
+      },
+      "default": "default"
+    },
+    "providers": {
+      "credentials": {
+        "anthropic": {
+          "provider": "anthropic",
+          "api_key": "sk-ant-your-key"
+        }
+      },
+      "default": "anthropic"
     }
   }
 }
 ```
 
+**Note:** Either a Factory API key OR a provider API key (e.g., Anthropic) is required. If no Factory key is provided, the system uses OpenCode runtime with provider keys.
+
 ## Start the Server
 
 ```bash
-oubliette --config-dir ~/.oubliette/config
+# Start in foreground
+oubliette
+
+# Start in background (daemon mode)
+oubliette --daemon
 ```
 
-Or run from a project directory with its own config:
+The server auto-detects config location:
+1. `--dir` flag if specified
+2. `OUBLIETTE_HOME` environment variable
+3. `./.oubliette` if present in current directory
+4. `~/.oubliette` (default)
+
+### Using --dir for Project-Specific Instances
+
+Run a separate Oubliette instance from a project directory:
 
 ```bash
-cd /path/to/project
-oubliette
+# Initialize in project directory
+oubliette init --dir /path/to/project
+
+# Configure MCP (creates .factory/mcp.json in project)
+oubliette mcp --setup droid --dir /path/to/project
+
+# Start server with project config
+oubliette --dir /path/to/project --daemon
 ```
 
 ## Upgrading
@@ -142,6 +171,26 @@ Install Docker Desktop or ensure the Docker daemon is running:
 docker ps
 ```
 
+On macOS, you can also use Apple Container:
+
+```bash
+brew install apple/apple/container
+container system start
+```
+
 ### "Configuration error"
 
 Run `oubliette init` to create default configuration files.
+
+### "Token validation failed"
+
+If you regenerate tokens with `mcp --setup`, restart the server to pick up the new token:
+
+```bash
+pkill oubliette
+oubliette --daemon
+```
+
+### "No API credentials configured"
+
+Add either a Factory API key or a provider API key (Anthropic, OpenAI, etc.) to `oubliette.jsonc`. See [CONFIGURATION.md](CONFIGURATION.md) for details.

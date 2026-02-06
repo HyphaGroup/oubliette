@@ -166,10 +166,11 @@ Oubliette uses unified tools with an `action` parameter for related operations.
 |--------|-------------|
 | `create` | Create scheduled task |
 | `list` | List schedules |
-| `get` | Get schedule details |
+| `get` | Get schedule details (includes session_id, last_output per target) |
 | `update` | Update schedule |
 | `delete` | Delete schedule |
 | `trigger` | Manually trigger schedule |
+| `history` | Get execution history for a schedule |
 
 ```json
 {"action": "create", "name": "...", "cron_expr": "0 * * * *", "prompt": "...", "targets": [...]}
@@ -178,7 +179,12 @@ Oubliette uses unified tools with an `action` parameter for related operations.
 {"action": "update", "schedule_id": "...", "enabled": false}
 {"action": "delete", "schedule_id": "..."}
 {"action": "trigger", "schedule_id": "..."}
+{"action": "history", "schedule_id": "...", "limit": 10}
 ```
+
+**Session Pinning**: Each schedule target maintains a persistent session. The same session is reused across runs, providing continuity. If the session is closed, it's automatically resumed.
+
+**Execution History**: Every execution is recorded with status (success/failed/skipped), output, and error. Use `history` action to retrieve past executions.
 
 ### Standalone Tools
 
