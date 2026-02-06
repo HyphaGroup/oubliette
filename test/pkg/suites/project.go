@@ -247,15 +247,15 @@ func GetProjectTests() []*testpkg.TestCase {
 				// Pre-cleanup
 				ctx.PreTestCleanup(projName)
 
-				// Create project with osint container type
+				// Create project with base container type (config-driven, not hardcoded)
 				params := map[string]interface{}{
 					"action":         "create",
 					"name":           projName,
-					"description":    "Test project with osint container type",
-					"container_type": "osint",
+					"description":    "Test project with base container type",
+					"container_type": "base",
 				}
 
-				ctx.Log("Creating project with osint container type")
+				ctx.Log("Creating project with base container type")
 				result, err := ctx.Client.InvokeTool("project", params)
 				ctx.Assertions.AssertNoError(err, "Should create project with container_type")
 
@@ -280,8 +280,8 @@ func GetProjectTests() []*testpkg.TestCase {
 
 				if err == nil {
 					content := getResult.GetToolContent()
-					ctx.Assertions.AssertContains(content, "oubliette-osint", "Project should use osint image")
-					ctx.Assertions.AssertContains(content, "osint", "Project should have osint container type")
+					ctx.Assertions.AssertContains(content, "oubliette-base", "Project should use base image")
+					ctx.Assertions.AssertContains(content, "base", "Project should have base container type")
 				}
 
 				return nil

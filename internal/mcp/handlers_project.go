@@ -17,7 +17,6 @@ import (
 
 // CredentialRefs specifies which credentials to use for a project
 type CredentialRefs struct {
-	Factory  string `json:"factory,omitempty"`
 	GitHub   string `json:"github,omitempty"`
 	Provider string `json:"provider,omitempty"`
 }
@@ -39,7 +38,6 @@ type CreateProjectParams struct {
 	MaxCostUSD          *float64 `json:"max_cost_usd,omitempty"`
 
 	// Agent configuration
-	AgentRuntime  string         `json:"agent_runtime,omitempty"`  // droid, opencode (default: server setting)
 	Model         string         `json:"model,omitempty"`          // Model shorthand (e.g., "sonnet") or full ID
 	Autonomy      string         `json:"autonomy,omitempty"`       // off, low, medium, high
 	Reasoning     string         `json:"reasoning,omitempty"`      // off, low, medium, high
@@ -131,21 +129,6 @@ func (s *Server) handleCreateProject(ctx context.Context, request *mcp.CallToolR
 		}
 	}
 
-	// Validate agent_runtime if provided
-	if params.AgentRuntime != "" {
-		validRuntimes := []string{"droid", "opencode"}
-		found := false
-		for _, r := range validRuntimes {
-			if params.AgentRuntime == r {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return nil, nil, fmt.Errorf("invalid agent_runtime: %s (must be one of: droid, opencode)", params.AgentRuntime)
-		}
-	}
-
 	// Convert MCP servers from map[string]any to map[string]AgentMCPServer
 	var mcpServers map[string]project.AgentMCPServer
 	if len(params.MCPServers) > 0 {
@@ -189,7 +172,6 @@ func (s *Server) handleCreateProject(ctx context.Context, request *mcp.CallToolR
 	var credRefs *project.CredentialRefs
 	if params.CredentialRefs != nil {
 		credRefs = &project.CredentialRefs{
-			Factory:  params.CredentialRefs.Factory,
 			GitHub:   params.CredentialRefs.GitHub,
 			Provider: params.CredentialRefs.Provider,
 		}
@@ -207,7 +189,6 @@ func (s *Server) handleCreateProject(ctx context.Context, request *mcp.CallToolR
 		MaxRecursionDepth:   params.MaxRecursionDepth,
 		MaxAgentsPerSession: params.MaxAgentsPerSession,
 		MaxCostUSD:          params.MaxCostUSD,
-		AgentRuntime:        params.AgentRuntime,
 		Model:               params.Model,
 		Autonomy:            params.Autonomy,
 		Reasoning:           params.Reasoning,
@@ -588,7 +569,6 @@ type ProjectOptionsResponse struct {
 	Credentials    *CredentialsOptionsResponse `json:"credentials,omitempty"`
 	Models         *ModelsOptionsResponse      `json:"models,omitempty"`
 	ContainerTypes *ContainerTypesResponse     `json:"container_types,omitempty"`
-	AgentRuntimes  *AgentRuntimesResponse      `json:"agent_runtimes,omitempty"`
 	TokenScopes    *TokenScopesResponse        `json:"token_scopes,omitempty"`
 }
 
@@ -609,7 +589,6 @@ type ProjectDefaultsResponse struct {
 }
 
 type CredentialsOptionsResponse struct {
-	Factory   []CredentialOptionInfo         `json:"factory"`
 	GitHub    []CredentialOptionInfo         `json:"github"`
 	Providers []ProviderCredentialOptionInfo `json:"providers"`
 }
@@ -647,17 +626,6 @@ type ContainerTypeInfo struct {
 	Description string `json:"description"`
 }
 
-type AgentRuntimesResponse struct {
-	Available []AgentRuntimeInfo `json:"available"`
-	Default   string             `json:"default"`
-}
-
-type AgentRuntimeInfo struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Available   bool   `json:"available"`
-}
-
 func (s *Server) handleProjectOptions(ctx context.Context, request *mcp.CallToolRequest, params *ProjectOptionsParams) (*mcp.CallToolResult, any, error) {
 	if _, err := requireAuth(ctx); err != nil {
 		return nil, nil, err
@@ -675,15 +643,6 @@ func (s *Server) handleProjectOptions(ctx context.Context, request *mcp.CallTool
 	// Add credentials if configured
 	if s.credentials != nil {
 		credsList := s.credentials.ListCredentials()
-
-		factory := make([]CredentialOptionInfo, len(credsList.Factory))
-		for i, c := range credsList.Factory {
-			factory[i] = CredentialOptionInfo{
-				Name:        c.Name,
-				Description: c.Description,
-				IsDefault:   c.IsDefault,
-			}
-		}
 
 		github := make([]CredentialOptionInfo, len(credsList.GitHub))
 		for i, c := range credsList.GitHub {
@@ -705,7 +664,6 @@ func (s *Server) handleProjectOptions(ctx context.Context, request *mcp.CallTool
 		}
 
 		response.Credentials = &CredentialsOptionsResponse{
-			Factory:   factory,
 			GitHub:    github,
 			Providers: providers,
 		}
@@ -741,23 +699,6 @@ func (s *Server) handleProjectOptions(ctx context.Context, request *mcp.CallTool
 			Available: available,
 			Default:   "dev",
 		}
-	}
-
-	// Add agent runtimes - detect availability based on configuration
-	droidAvailable := s.agentRuntime != nil && s.agentRuntime.Name() == "droid" && s.agentRuntime.IsAvailable()
-	opencodeAvailable := true // OpenCode is always available (no external API needed)
-
-	defaultRuntime := "auto"
-	if s.agentRuntime != nil {
-		defaultRuntime = s.agentRuntime.Name()
-	}
-
-	response.AgentRuntimes = &AgentRuntimesResponse{
-		Available: []AgentRuntimeInfo{
-			{Name: "droid", Description: "Factory AI Droid CLI (requires FACTORY_API_KEY)", Available: droidAvailable},
-			{Name: "opencode", Description: "OpenCode server (local models, no API key required)", Available: opencodeAvailable},
-		},
-		Default: defaultRuntime,
 	}
 
 	// Add token scope formats

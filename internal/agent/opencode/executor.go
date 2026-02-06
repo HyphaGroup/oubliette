@@ -28,9 +28,10 @@ import (
 
 // StreamingExecutor implements agent.StreamingExecutor for OpenCode
 type StreamingExecutor struct {
-	server    *Server
-	sessionID string
-	model     string // Model in "providerID/modelID" format
+	server         *Server
+	sessionID      string
+	model          string // Model in "providerID/modelID" format
+	reasoningLevel string // Reasoning level passed as variant to OpenCode
 
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -49,18 +50,20 @@ var _ agent.StreamingExecutor = (*StreamingExecutor)(nil)
 
 // NewStreamingExecutor creates a new streaming executor
 // model should be in "providerID/modelID" format (e.g., "anthropic/claude-sonnet-4-5")
-func NewStreamingExecutor(ctx context.Context, server *Server, sessionID, model string) (*StreamingExecutor, error) {
+// reasoningLevel maps to OpenCode's variant parameter ("low", "medium", "high", or "")
+func NewStreamingExecutor(ctx context.Context, server *Server, sessionID, model, reasoningLevel string) (*StreamingExecutor, error) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	e := &StreamingExecutor{
-		server:    server,
-		sessionID: sessionID,
-		model:     model,
-		ctx:       ctx,
-		cancel:    cancel,
-		eventsCh:  make(chan *agent.StreamEvent, 100),
-		errorsCh:  make(chan error, 10),
-		doneCh:    make(chan struct{}),
+		server:         server,
+		sessionID:      sessionID,
+		model:          model,
+		reasoningLevel: reasoningLevel,
+		ctx:            ctx,
+		cancel:         cancel,
+		eventsCh:       make(chan *agent.StreamEvent, 100),
+		errorsCh:       make(chan error, 10),
+		doneCh:         make(chan struct{}),
 	}
 
 	// Subscribe to event stream
@@ -87,14 +90,12 @@ func (e *StreamingExecutor) SendMessage(message string) error {
 	e.mu.RUnlock()
 
 	// Send message via async endpoint (returns immediately, events come via SSE)
-	// Include model to ensure correct model is used (OpenCode config may not be found due to git boundaries)
-	return e.server.SendMessageAsync(e.ctx, e.sessionID, message, e.model)
+	return e.server.SendMessageAsync(e.ctx, e.sessionID, message, e.model, e.reasoningLevel)
 }
 
-// Cancel requests termination of the current operation
+// Cancel requests termination of the current operation via OpenCode's abort endpoint
 func (e *StreamingExecutor) Cancel() error {
-	// TODO: Call abort endpoint
-	return nil
+	return e.server.AbortSession(e.ctx, e.sessionID)
 }
 
 // Events returns a channel for receiving stream events
@@ -186,8 +187,8 @@ func (e *StreamingExecutor) processEvents() {
 		}
 
 		event, err := parseSSEEvent(data)
-		if err != nil {
-			continue // Skip malformed events
+		if err != nil || event == nil {
+			continue
 		}
 
 		// Filter for our session
@@ -204,12 +205,13 @@ func (e *StreamingExecutor) processEvents() {
 
 		// Note: StreamEventCompletion means the current turn is complete,
 		// NOT that the session is over. The session stays running, waiting
-		// for the next message - same as Droid behavior.
+		// for the next message.
 	}
 }
 
-// parseSSEEvent parses an SSE data payload into a StreamEvent
-// OpenCode SSE format: {"type": "...", "properties": {...}}
+// parseSSEEvent parses an SSE data payload into a StreamEvent.
+// Returns nil for events that carry no useful information (transport noise,
+// redundant metadata updates, duplicate completion signals).
 func parseSSEEvent(data string) (*agent.StreamEvent, error) {
 	var raw map[string]interface{}
 	if err := json.Unmarshal([]byte(data), &raw); err != nil {
@@ -219,72 +221,91 @@ func parseSSEEvent(data string) (*agent.StreamEvent, error) {
 	eventType, _ := raw["type"].(string)
 	props, _ := raw["properties"].(map[string]interface{})
 
-	event := &agent.StreamEvent{
-		Raw: raw,
-	}
-
 	switch eventType {
 	case "message.updated":
-		event.Type = agent.StreamEventMessage
-		if info, ok := props["info"].(map[string]interface{}); ok {
-			event.SessionID, _ = info["sessionID"].(string)
-			event.ID, _ = info["id"].(string)
-			event.Role, _ = info["role"].(string)
-		}
+		// Metadata-only (role/id) -- fires on every token with no text content.
+		// Dropped: the consolidated message already carries role info.
+		return nil, nil
 
 	case "message.part.updated":
-		if part, ok := props["part"].(map[string]interface{}); ok {
-			partType, _ := part["type"].(string)
-			switch partType {
-			case "text":
-				event.Type = agent.StreamEventMessage
-				event.Text, _ = part["text"].(string)
-				// Use delta for streaming incremental text
-				if delta, ok := props["delta"].(string); ok && delta != "" {
-					event.Text = delta
-				}
-			case "tool-invocation":
-				event.Type = agent.StreamEventToolCall
-				event.ToolID, _ = part["id"].(string)
-				event.ToolName, _ = part["toolName"].(string)
-				if args, ok := part["args"].(map[string]interface{}); ok {
-					event.Parameters = args
-				}
-			case "tool-result":
-				event.Type = agent.StreamEventToolResult
-				event.ToolID, _ = part["id"].(string)
-				if result, ok := part["result"].(string); ok {
-					event.Value = result
-				}
-				event.IsError, _ = part["isError"].(bool)
-			case "step-start", "step-finish", "reasoning":
-				event.Type = agent.StreamEventSystem
-				event.Subtype = partType
+		part, ok := props["part"].(map[string]interface{})
+		if !ok {
+			return nil, nil
+		}
+		partType, _ := part["type"].(string)
+		switch partType {
+		case "text":
+			if delta, ok := props["delta"].(string); ok && delta != "" {
+				return &agent.StreamEvent{
+					Type: agent.StreamEventDelta,
+					Text: delta,
+					Raw:  raw,
+				}, nil
 			}
+			// Consolidated full text (no delta prop)
+			text, _ := part["text"].(string)
+			return &agent.StreamEvent{
+				Type: agent.StreamEventMessage,
+				Text: text,
+				Raw:  raw,
+			}, nil
+		case "tool-invocation":
+			event := &agent.StreamEvent{Type: agent.StreamEventToolCall, Raw: raw}
+			event.ToolID, _ = part["id"].(string)
+			event.ToolName, _ = part["toolName"].(string)
+			if args, ok := part["args"].(map[string]interface{}); ok {
+				event.Parameters = args
+			}
+			return event, nil
+		case "tool-result":
+			event := &agent.StreamEvent{Type: agent.StreamEventToolResult, Raw: raw}
+			event.ToolID, _ = part["id"].(string)
+			if result, ok := part["result"].(string); ok {
+				event.Value = result
+			}
+			event.IsError, _ = part["isError"].(bool)
+			return event, nil
+		case "step-start", "step-finish", "reasoning":
+			return &agent.StreamEvent{
+				Type:    agent.StreamEventSystem,
+				Subtype: partType,
+				Raw:     raw,
+			}, nil
+		default:
+			return nil, nil
 		}
 
 	case "session.status":
-		if status, ok := props["status"].(map[string]interface{}); ok {
-			statusType, _ := status["type"].(string)
-			if statusType == "idle" {
-				event.Type = agent.StreamEventCompletion
-			} else {
-				event.Type = agent.StreamEventSystem
-				event.Subtype = statusType
-			}
+		status, ok := props["status"].(map[string]interface{})
+		if !ok {
+			return nil, nil
 		}
+		statusType, _ := status["type"].(string)
+		if statusType == "idle" {
+			return &agent.StreamEvent{
+				Type: agent.StreamEventCompletion,
+				Raw:  raw,
+			}, nil
+		}
+		return &agent.StreamEvent{
+			Type:    agent.StreamEventSystem,
+			Subtype: statusType,
+			Raw:     raw,
+		}, nil
 
 	case "session.idle":
-		event.Type = agent.StreamEventCompletion
+		// Redundant -- session.status idle already emits completion
+		return nil, nil
 
 	case "server.connected", "server.heartbeat":
-		event.Type = agent.StreamEventSystem
-		event.Subtype = eventType
+		// Transport noise
+		return nil, nil
 
 	default:
-		event.Type = agent.StreamEventSystem
-		event.Subtype = eventType
+		return &agent.StreamEvent{
+			Type:    agent.StreamEventSystem,
+			Subtype: eventType,
+			Raw:     raw,
+		}, nil
 	}
-
-	return event, nil
 }

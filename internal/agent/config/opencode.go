@@ -29,7 +29,8 @@ type ProviderConfig struct {
 
 // ModelOptions are model-specific options (e.g., thinking, reasoningEffort)
 type ModelOptions struct {
-	Options map[string]any `json:"options,omitempty"`
+	Options map[string]any    `json:"options,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
 }
 
 // ToOpenCodeConfig converts canonical agent config to OpenCode format
@@ -77,15 +78,41 @@ func ToOpenCodeConfig(cfg *AgentConfig) *OpenCodeConfig {
 		MCP:        mcp,
 	}
 
-	// Add provider-specific reasoning config if needed
-	if cfg.Reasoning != "" && cfg.Reasoning != "off" {
-		providerConfig := translateReasoningToOpenCode(cfg.Reasoning, model)
-		if providerConfig != nil {
-			config.Provider = providerConfig
+	// Merge extra headers into provider model config (reasoning is handled per-message via variant)
+	if len(cfg.ExtraHeaders) > 0 {
+		provider, modelName := splitProviderModel(model)
+		if provider != "" {
+			if config.Provider == nil {
+				config.Provider = make(map[string]ProviderConfig)
+			}
+			pc := config.Provider[provider]
+			if pc.Models == nil {
+				pc.Models = make(map[string]ModelOptions)
+			}
+			mo := pc.Models[modelName]
+			mo.Headers = cfg.ExtraHeaders
+			pc.Models[modelName] = mo
+			config.Provider[provider] = pc
 		}
 	}
 
 	return config
+}
+
+// splitProviderModel splits "anthropic/claude-opus-4-6" into provider and model name
+func splitProviderModel(model string) (string, string) {
+	if idx := strings.Index(model, "/"); idx != -1 {
+		return model[:idx], model[idx+1:]
+	}
+	switch {
+	case strings.HasPrefix(model, "claude-"):
+		return "anthropic", model
+	case strings.HasPrefix(model, "gpt-"):
+		return "openai", model
+	case strings.HasPrefix(model, "gemini-"):
+		return "google", model
+	}
+	return "", model
 }
 
 // translateModelToOpenCodeFormat adds provider prefix to model ID
@@ -139,91 +166,5 @@ func translateAutonomyToPermissions(autonomy string, custom map[string]any) any 
 		}
 	default:
 		return "allow"
-	}
-}
-
-// translateReasoningToOpenCode returns provider-specific reasoning configuration
-func translateReasoningToOpenCode(reasoning, model string) map[string]ProviderConfig {
-	// Extract provider from model (e.g., "anthropic/claude-sonnet..." -> "anthropic")
-	provider := ""
-	modelName := model
-	if idx := strings.Index(model, "/"); idx != -1 {
-		provider = model[:idx]
-		modelName = model[idx+1:]
-	} else {
-		// Detect provider from model name prefix
-		switch {
-		case strings.HasPrefix(model, "claude-"):
-			provider = "anthropic"
-		case strings.HasPrefix(model, "gpt-"):
-			provider = "openai"
-		case strings.HasPrefix(model, "gemini-"):
-			provider = "google"
-		default:
-			return nil // Unknown provider
-		}
-	}
-
-	var options map[string]any
-	switch provider {
-	case "anthropic":
-		// Anthropic uses thinking.budgetTokens
-		switch reasoning {
-		case "low":
-			options = map[string]any{
-				"thinking": map[string]any{
-					"type":         "enabled",
-					"budgetTokens": 4000,
-				},
-			}
-		case "medium":
-			options = map[string]any{
-				"thinking": map[string]any{
-					"type":         "enabled",
-					"budgetTokens": 16000,
-				},
-			}
-		case "high":
-			options = map[string]any{
-				"thinking": map[string]any{
-					"type":         "enabled",
-					"budgetTokens": 32000,
-				},
-			}
-		default:
-			return nil
-		}
-	case "openai":
-		// OpenAI uses reasoningEffort
-		switch reasoning {
-		case "low":
-			options = map[string]any{"reasoningEffort": "low"}
-		case "medium":
-			options = map[string]any{"reasoningEffort": "medium"}
-		case "high":
-			options = map[string]any{"reasoningEffort": "high"}
-		default:
-			return nil
-		}
-	case "google":
-		// Google uses variant (low/high only)
-		switch reasoning {
-		case "low":
-			options = map[string]any{"variant": "low"}
-		case "medium", "high":
-			options = map[string]any{"variant": "high"}
-		default:
-			return nil
-		}
-	default:
-		return nil
-	}
-
-	return map[string]ProviderConfig{
-		provider: {
-			Models: map[string]ModelOptions{
-				modelName: {Options: options},
-			},
-		},
 	}
 }

@@ -23,7 +23,6 @@ type ProjectParams struct {
 	MaxRecursionDepth   *int            `json:"max_recursion_depth,omitempty"`
 	MaxAgentsPerSession *int            `json:"max_agents_per_session,omitempty"`
 	MaxCostUSD          *float64        `json:"max_cost_usd,omitempty"`
-	AgentRuntime        string          `json:"agent_runtime,omitempty"`
 	Model               string          `json:"model,omitempty"`
 	Autonomy            string          `json:"autonomy,omitempty"`
 	Reasoning           string          `json:"reasoning,omitempty"`
@@ -80,7 +79,6 @@ func (s *Server) projectCreate(ctx context.Context, request *mcp.CallToolRequest
 		MaxRecursionDepth:   params.MaxRecursionDepth,
 		MaxAgentsPerSession: params.MaxAgentsPerSession,
 		MaxCostUSD:          params.MaxCostUSD,
-		AgentRuntime:        params.AgentRuntime,
 		Model:               params.Model,
 		Autonomy:            params.Autonomy,
 		Reasoning:           params.Reasoning,

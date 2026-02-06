@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"testing"
 )
 
@@ -28,6 +29,62 @@ func TestModelRegistry_GetModel(t *testing.T) {
 			t.Error("expected model not found")
 		}
 	})
+}
+
+func TestModelDefinition_ExtraHeadersJSON(t *testing.T) {
+	def := ModelDefinition{
+		Model:           "claude-opus-4-6",
+		DisplayName:     "Opus 4.6 1M",
+		BaseURL:         "https://api.anthropic.com",
+		MaxOutputTokens: 128000,
+		Provider:        "anthropic",
+		ExtraHeaders: map[string]string{
+			"anthropic-beta": "context-1m-2025-08-07",
+		},
+	}
+
+	data, err := json.Marshal(def)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+
+	var parsed ModelDefinition
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+
+	if parsed.ExtraHeaders["anthropic-beta"] != "context-1m-2025-08-07" {
+		t.Errorf("ExtraHeaders not round-tripped: got %v", parsed.ExtraHeaders)
+	}
+	if parsed.MaxOutputTokens != 128000 {
+		t.Errorf("MaxOutputTokens: got %d, want 128000", parsed.MaxOutputTokens)
+	}
+}
+
+func TestModelDefinition_NoExtraHeadersOmitted(t *testing.T) {
+	def := ModelDefinition{
+		Model:    "claude-sonnet-4-5",
+		Provider: "anthropic",
+	}
+
+	data, err := json.Marshal(def)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+
+	s := string(data)
+	if containsStr(s, "extraHeaders") {
+		t.Error("extraHeaders should be omitted when empty")
+	}
+}
+
+func containsStr(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }
 
 func TestModelRegistry_HasModel(t *testing.T) {

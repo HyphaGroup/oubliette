@@ -172,7 +172,7 @@ func (m *Manager) Create(ctx context.Context, projectID, containerID, prompt str
 		},
 	}
 
-	session.DroidSessionID = resp.SessionID
+	session.RuntimeSessionID = resp.SessionID
 	session.Turns = append(session.Turns, turn)
 	session.TotalCost.InputTokens = resp.InputTokens
 	session.TotalCost.OutputTokens = resp.OutputTokens
@@ -204,7 +204,7 @@ func (m *Manager) Continue(ctx context.Context, sessionID, prompt string) (*Turn
 		Prompt:        prompt,
 		ContainerID:   session.ContainerID,
 		WorkingDir:    "/workspace",
-		SessionID:     session.DroidSessionID, // Continue agent session
+		SessionID:     session.RuntimeSessionID, // Continue agent session
 		Model:         session.Model,
 		AutonomyLevel: session.AutonomyLevel,
 	}

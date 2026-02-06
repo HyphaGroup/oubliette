@@ -12,6 +12,7 @@ func TestStreamEventTypeConstants(t *testing.T) {
 	}{
 		{StreamEventSystem, "system"},
 		{StreamEventMessage, "message"},
+		{StreamEventDelta, "delta"},
 		{StreamEventToolCall, "tool_call"},
 		{StreamEventToolResult, "tool_result"},
 		{StreamEventCompletion, "completion"},

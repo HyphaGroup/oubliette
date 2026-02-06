@@ -31,8 +31,7 @@ type Server struct {
 	projectMgr      *project.Manager
 	runtime         container.Runtime
 	imageManager    *container.ImageManager // Manages container images from config
-	agentRuntime    agent.Runtime           // Agent runtime (droid or opencode)
-	runtimeFactory  RuntimeFactoryFunc      // Factory to create runtimes by name
+	agentRuntime    agent.Runtime
 	sessionMgr      *session.Manager
 	activeSessions  *session.ActiveSessionManager
 	authStore       *auth.Store
@@ -47,20 +46,15 @@ type Server struct {
 	scheduleRunner  *schedule.Runner           // Schedule execution runner
 }
 
-// RuntimeFactoryFunc creates an agent runtime by name (e.g., "droid", "opencode")
-// Returns nil if the runtime type is not supported
-type RuntimeFactoryFunc func(runtimeType string) agent.Runtime
-
 // ServerConfig holds container resource configuration
 type ServerConfig struct {
-	ContainerMemory string                     // e.g., "4G"
-	ContainerCPUs   int                        // e.g., 4
-	Credentials     *config.CredentialRegistry // Unified credential registry
-	ModelRegistry   *config.ModelRegistry      // Model configuration registry
-	ImageManager    *container.ImageManager    // Manages container images from config
-	AgentRuntime    agent.Runtime              // Agent runtime (droid or opencode)
-	RuntimeFactory  RuntimeFactoryFunc         // Factory to create runtimes by name for per-project overrides
-	ScheduleStore   *schedule.Store            // Schedule persistence store
+	ContainerMemory string
+	ContainerCPUs   int
+	Credentials     *config.CredentialRegistry
+	ModelRegistry   *config.ModelRegistry
+	ImageManager    *container.ImageManager
+	AgentRuntime    agent.Runtime
+	ScheduleStore   *schedule.Store
 }
 
 // NewServer creates a new MCP server instance
@@ -71,7 +65,6 @@ func NewServer(projectMgr *project.Manager, runtime container.Runtime, sessionMg
 	var modelRegistry *config.ModelRegistry
 	var imageMgr *container.ImageManager
 	var agentRt agent.Runtime
-	var runtimeFactory RuntimeFactoryFunc
 	var schedStore *schedule.Store
 	if cfg != nil {
 		if cfg.ContainerMemory != "" {
@@ -84,7 +77,6 @@ func NewServer(projectMgr *project.Manager, runtime container.Runtime, sessionMg
 		modelRegistry = cfg.ModelRegistry
 		imageMgr = cfg.ImageManager
 		agentRt = cfg.AgentRuntime
-		runtimeFactory = cfg.RuntimeFactory
 		schedStore = cfg.ScheduleStore
 	}
 
@@ -93,7 +85,6 @@ func NewServer(projectMgr *project.Manager, runtime container.Runtime, sessionMg
 		runtime:         runtime,
 		imageManager:    imageMgr,
 		agentRuntime:    agentRt,
-		runtimeFactory:  runtimeFactory,
 		sessionMgr:      sessionMgr,
 		activeSessions:  session.NewActiveSessionManager(session.DefaultMaxActiveSessions, session.DefaultSessionIdleTimeout),
 		authStore:       authStore,
@@ -133,37 +124,17 @@ func (s *Server) HasActiveSessionsForWorkspace(projectID, workspaceID string) bo
 	return ok
 }
 
-// GetRuntimeForProject returns the appropriate agent runtime for a project.
-// If the project has an agent_runtime override and a factory is configured,
-// uses the factory to create the appropriate runtime. Otherwise returns server default.
-func (s *Server) GetRuntimeForProject(proj *project.Project) agent.Runtime {
-	// If project has a runtime override and we have a factory
-	if proj.AgentRuntime != "" && s.runtimeFactory != nil {
-		if rt := s.runtimeFactory(proj.AgentRuntime); rt != nil {
-			return rt
-		}
-		// Factory returned nil (runtime type not supported), fall through to default
-	}
-	// Return server default runtime
-	return s.agentRuntime
-}
-
 // GetSocketHandler returns the socket handler for JSON-RPC communication
 func (s *Server) GetSocketHandler() *SocketHandler {
 	return s.socketHandler
 }
 
 // HasAPICredentials returns true if any API credentials are configured
-// (either Factory API key or provider credentials)
+// (provider credentials for Anthropic, OpenAI, etc.)
 func (s *Server) HasAPICredentials() bool {
 	if s.credentials == nil {
 		return false
 	}
-	// Check for Factory API key
-	if key, ok := s.credentials.GetDefaultFactoryKey(); ok && key != "" {
-		return true
-	}
-	// Check for provider credentials
 	if cred, ok := s.credentials.GetDefaultProviderCredential(); ok && cred.APIKey != "" {
 		return true
 	}
@@ -366,16 +337,15 @@ func (s *Server) doExecuteScheduleTarget(ctx context.Context, sched *schedule.Sc
 
 		// Session not active - try to resume from disk
 		existingSession, err := s.sessionMgr.Load(target.SessionID)
-		if err == nil && existingSession != nil && existingSession.DroidSessionID != "" {
-			env, err := s.prepareSessionEnvironment(ctx, target.ProjectID, workspaceID, false, "", "schedule", nil)
+		if err == nil && existingSession != nil && existingSession.RuntimeSessionID != "" {
+			env, err := s.prepareSessionEnvironment(ctx, target.ProjectID, workspaceID, false, "", "schedule")
 			if err != nil {
 				logger.Info("Failed to prepare environment for session resume: %v", err)
 			} else {
-				projectRuntime := s.GetRuntimeForProject(env.project)
 				opts := session.StartOptions{
 					WorkspaceID:        workspaceID,
 					WorkspaceIsolation: env.project.WorkspaceIsolation,
-					RuntimeOverride:    projectRuntime,
+					RuntimeOverride:    s.agentRuntime,
 				}
 
 				resumedSess, executor, resumeErr := s.sessionMgr.ResumeBidirectionalSession(ctx, existingSession, env.containerName, sched.Prompt, opts)
@@ -407,16 +377,15 @@ func (s *Server) doExecuteScheduleTarget(ctx context.Context, sched *schedule.Sc
 	}
 
 	// No pinned session or resume failed - spawn new
-	env, err := s.prepareSessionEnvironment(ctx, target.ProjectID, workspaceID, false, "", "schedule", nil)
+	env, err := s.prepareSessionEnvironment(ctx, target.ProjectID, workspaceID, false, "", "schedule")
 	if err != nil {
 		return nil, err
 	}
 
-	projectRuntime := s.GetRuntimeForProject(env.project)
 	opts := session.StartOptions{
 		WorkspaceID:        env.workspaceID,
 		WorkspaceIsolation: env.project.WorkspaceIsolation,
-		RuntimeOverride:    projectRuntime,
+		RuntimeOverride:    s.agentRuntime,
 	}
 
 	sess, activeSess, err := s.spawnAndRegisterSession(ctx, target.ProjectID, env.containerName, env.workspaceID, sched.Prompt, opts, nil)

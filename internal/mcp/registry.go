@@ -15,6 +15,21 @@ import (
 // ToolHandler is a function that handles a tool call
 type ToolHandler func(ctx context.Context, arguments json.RawMessage) (any, error)
 
+type ctxKeyCallToolRequest struct{}
+
+// WithCallToolRequest stores the MCP CallToolRequest in context
+func WithCallToolRequest(ctx context.Context, req *mcp_sdk.CallToolRequest) context.Context {
+	return context.WithValue(ctx, ctxKeyCallToolRequest{}, req)
+}
+
+// CallToolRequestFromContext retrieves the MCP CallToolRequest from context
+func CallToolRequestFromContext(ctx context.Context) *mcp_sdk.CallToolRequest {
+	if req, ok := ctx.Value(ctxKeyCallToolRequest{}).(*mcp_sdk.CallToolRequest); ok {
+		return req
+	}
+	return nil
+}
+
 // ToolDef defines a tool with all metadata
 type ToolDef struct {
 	Name        string         `json:"name"`
@@ -223,6 +238,7 @@ func (r *Registry) RegisterWithMCPServer(server *mcp_sdk.Server) {
 		// Capture handler in closure properly
 		h := handler
 		sdkHandler := func(ctx context.Context, req *mcp_sdk.CallToolRequest) (*mcp_sdk.CallToolResult, error) {
+			ctx = WithCallToolRequest(ctx, req)
 			var args json.RawMessage
 			if req.Params != nil {
 				args = req.Params.Arguments
@@ -255,10 +271,13 @@ func wrapHandler[P any](handler func(ctx context.Context, req *mcp_sdk.CallToolR
 			}
 		}
 
-		req := &mcp_sdk.CallToolRequest{
-			Params: &mcp_sdk.CallToolParamsRaw{
-				Arguments: args,
-			},
+		req := CallToolRequestFromContext(ctx)
+		if req == nil {
+			req = &mcp_sdk.CallToolRequest{
+				Params: &mcp_sdk.CallToolParamsRaw{
+					Arguments: args,
+				},
+			}
 		}
 
 		result, data, err := handler(ctx, req, params)

@@ -183,36 +183,36 @@ func GetContainerTests() []*testpkg.TestCase {
 		},
 
 		{
-			Name:        "test_rebuild_container",
-			Description: "Test rebuilding Docker image for a project",
-			Tags:        []string{"container", "rebuild"},
+			Name:        "test_refresh_container",
+			Description: "Test refreshing container image for a project",
+			Tags:        []string{"container", "refresh"},
 			Timeout:     120 * time.Second,
 			Execute: func(ctx *testpkg.TestContext) error {
-				projName := fmt.Sprintf("test-container-rebuild-%d", time.Now().UnixNano())
-				
+				projName := fmt.Sprintf("test-container-refresh-%d", time.Now().UnixNano())
+
 				// Pre-cleanup
 				ctx.PreTestCleanup(projName)
 
 				// Create project
-				projID, err := ctx.CreateProject(projName, "Test project for rebuild")
+				projID, err := ctx.CreateProject(projName, "Test project for refresh")
 				ctx.Assertions.AssertNoError(err, "Should create project")
 
 				if err != nil {
 					return err
 				}
 
-				// Rebuild image
-				ctx.Log("Rebuilding Docker image")
+				// Refresh container (pulls image and restarts)
+				ctx.Log("Refreshing container image")
 				params := map[string]interface{}{
 					"project_id": projID,
 				}
 
-				result, err := ctx.Client.InvokeTool("image_rebuild", params)
-				ctx.Assertions.AssertNoError(err, "Should rebuild image")
+				result, err := ctx.Client.InvokeTool("container_refresh", params)
+				ctx.Assertions.AssertNoError(err, "Should refresh container")
 
 				if err == nil {
-					ctx.Assertions.AssertFalse(result.IsError, "Rebuild should succeed")
-					ctx.Log("Image rebuilt successfully")
+					ctx.Assertions.AssertFalse(result.IsError, "Refresh should succeed")
+					ctx.Log("Container refreshed successfully")
 				}
 
 				return nil

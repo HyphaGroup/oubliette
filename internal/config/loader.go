@@ -6,13 +6,7 @@ import (
 
 // ServerJSONConfig holds server settings
 type ServerJSONConfig struct {
-	Address      string          `json:"address"`
-	AgentRuntime string          `json:"agent_runtime"` // auto, droid, opencode
-	Droid        DroidJSONConfig `json:"droid"`
-}
-
-type DroidJSONConfig struct {
-	DefaultModel string `json:"default_model"`
+	Address string `json:"address"`
 }
 
 // ConfigDefaultsConfig holds default settings for projects/sessions
@@ -32,7 +26,6 @@ type LimitsDefaults struct {
 
 // AgentDefaults contains default agent configuration
 type AgentDefaults struct {
-	Runtime    string                       `json:"runtime"`
 	Model      string                       `json:"model"`
 	Autonomy   string                       `json:"autonomy"`
 	Reasoning  string                       `json:"reasoning"`
@@ -75,7 +68,7 @@ type LoadedConfig struct {
 	ConfigDefaults  ConfigDefaultsConfig
 	ProjectDefaults ProjectDefaultsConfig
 	Models          *ModelRegistry
-	Containers      map[string]string // Container type name -> image name
+	Containers      map[string]string
 	ConfigDir       string
 }
 
@@ -88,7 +81,6 @@ func DefaultConfigDefaults() ConfigDefaultsConfig {
 			MaxCostUSD:          10.00,
 		},
 		Agent: AgentDefaults{
-			Runtime:   "opencode",
 			Model:     "sonnet",
 			Autonomy:  "off",
 			Reasoning: "medium",
@@ -127,14 +119,7 @@ func LoadAll(configDir string) (*LoadedConfig, error) {
 	return unified.ToLoadedConfig(filepath.Dir(configPath)), nil
 }
 
-// HasFactoryAPIKey returns true if a Factory API key is configured
-func (c *LoadedConfig) HasFactoryAPIKey() bool {
-	key, ok := c.Credentials.GetDefaultFactoryKey()
-	return ok && key != ""
-}
-
 // Validate checks that required configuration is present
 func (c *LoadedConfig) Validate() error {
-	// No required fields - Factory API key is optional (OpenCode works without it)
 	return nil
 }

@@ -867,38 +867,3 @@ func TestCreateWorkspaceSkipsAGENTSMDWhenNotIsolated(t *testing.T) {
 		t.Error("AGENTS.md should NOT be copied when workspace isolation is disabled")
 	}
 }
-
-func TestCreateWorkspaceCreatesFactoryDir(t *testing.T) {
-	tmpDir := t.TempDir()
-	mgr := NewManager(tmpDir, 5, 10, 100.0)
-
-	// Create project directory structure (use valid UUID)
-	projectID := "22222222-2222-2222-2222-222222222222"
-	projectDir := filepath.Join(tmpDir, projectID)
-	_ = os.MkdirAll(filepath.Join(projectDir, "workspaces"), 0o755)
-
-	// Create project .factory directory with config
-	projectFactoryDir := filepath.Join(projectDir, ".factory")
-	_ = os.MkdirAll(projectFactoryDir, 0o755)
-	configContent := `{"setting": "value"}`
-	if err := os.WriteFile(filepath.Join(projectFactoryDir, "config.json"), []byte(configContent), 0o644); err != nil {
-		t.Fatalf("failed to create config.json: %v", err)
-	}
-
-	// Create workspace (use valid UUID)
-	workspaceID := "33333333-3333-3333-3333-333333333333"
-	_, err := mgr.CreateWorkspace(projectID, workspaceID, "", "test")
-	if err != nil {
-		t.Fatalf("CreateWorkspace failed: %v", err)
-	}
-
-	// Verify .factory was copied to workspace
-	workspaceConfig := filepath.Join(projectDir, "workspaces", workspaceID, ".factory", "config.json")
-	data, err := os.ReadFile(workspaceConfig)
-	if err != nil {
-		t.Fatalf("failed to read workspace config.json: %v", err)
-	}
-	if string(data) != configContent {
-		t.Errorf("workspace config.json content = %q, want %q", string(data), configContent)
-	}
-}

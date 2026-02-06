@@ -78,7 +78,8 @@ func (s *Server) SendMessage(ctx context.Context, sessionID, message string) (st
 // SendMessageAsync sends a message asynchronously (returns immediately, events via SSE)
 // Uses the /session/:id/prompt_async endpoint
 // model format: "providerID/modelID" (e.g., "anthropic/claude-sonnet-4-5")
-func (s *Server) SendMessageAsync(ctx context.Context, sessionID, message, model string) error {
+// variant maps to OpenCode's reasoning variant ("low", "medium", "high", or "" for none)
+func (s *Server) SendMessageAsync(ctx context.Context, sessionID, message, model, variant string) error {
 	body := map[string]interface{}{
 		"parts": []map[string]string{
 			{"type": "text", "text": message},
@@ -96,6 +97,11 @@ func (s *Server) SendMessageAsync(ctx context.Context, sessionID, message, model
 		}
 	}
 
+	// Include variant for reasoning level
+	if variant != "" && variant != "off" {
+		body["variant"] = variant
+	}
+
 	jsonBody, _ := json.Marshal(body)
 
 	resp, err := s.doRequest(ctx, "POST", fmt.Sprintf("/session/%s/prompt_async", sessionID), bytes.NewReader(jsonBody))
@@ -110,6 +116,16 @@ func (s *Server) SendMessageAsync(ctx context.Context, sessionID, message, model
 		return fmt.Errorf("send message async failed: %s", string(respBody))
 	}
 
+	return nil
+}
+
+// AbortSession sends an abort request to stop the current operation
+func (s *Server) AbortSession(ctx context.Context, sessionID string) error {
+	resp, err := s.doRequest(ctx, "POST", fmt.Sprintf("/session/%s/abort", sessionID), nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
 	return nil
 }
 

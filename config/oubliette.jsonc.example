@@ -4,24 +4,11 @@
 
   // Server settings
   "server": {
-    "address": ":8080",              // Listen address
-    "agent_runtime": "auto",         // auto, droid, or opencode
-    "droid": {
-      "default_model": "sonnet"      // Model shorthand or full model ID
-    }
+    "address": ":8080"               // Listen address
   },
 
   // API credentials
   "credentials": {
-    "factory": {
-      "credentials": {
-        "default": {
-          "api_key": "fk-your-factory-api-key",
-          "description": "Primary Factory account"
-        }
-      },
-      "default": "default"
-    },
     "github": {
       "credentials": {
         "personal": {
@@ -51,8 +38,7 @@
       "max_cost_usd": 10.00
     },
     "agent": {
-      "runtime": "opencode",         // opencode or droid
-      "model": "sonnet",             // Model shorthand
+      "model": "opus",               // Model shorthand
       "autonomy": "off",             // off, semi, full
       "reasoning": "medium",         // low, medium, high
       "mcp_servers": {
@@ -92,11 +78,14 @@
         "provider": "anthropic"
       },
       "opus": {
-        "model": "claude-opus-4-5",
-        "displayName": "Opus 4.5",
+        "model": "claude-opus-4-6",
+        "displayName": "Opus 4.6 1M",
         "baseUrl": "https://api.anthropic.com",
-        "maxOutputTokens": 64000,
-        "provider": "anthropic"
+        "maxOutputTokens": 128000,
+        "provider": "anthropic",
+        "extraHeaders": {
+          "anthropic-beta": "context-1m-2025-08-07"
+        }
       },
       "haiku": {
         "model": "claude-haiku-4-5",
@@ -108,7 +97,7 @@
     },
     "defaults": {
       "included_models": ["sonnet", "opus"],
-      "session_model": "sonnet",
+      "session_model": "opus",
       "autonomy_mode": "auto-high",
       "reasoning_effort": "medium"
     }

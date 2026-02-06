@@ -2,12 +2,13 @@ package config
 
 // ModelDefinition represents a model configuration
 type ModelDefinition struct {
-	Model           string `json:"model"`
-	DisplayName     string `json:"displayName"`
-	BaseURL         string `json:"baseUrl"`
-	APIKey          string `json:"apiKey"`
-	MaxOutputTokens int    `json:"maxOutputTokens"`
-	Provider        string `json:"provider"`
+	Model           string            `json:"model"`
+	DisplayName     string            `json:"displayName"`
+	BaseURL         string            `json:"baseUrl"`
+	APIKey          string            `json:"apiKey"`
+	MaxOutputTokens int               `json:"maxOutputTokens"`
+	Provider        string            `json:"provider"`
+	ExtraHeaders    map[string]string `json:"extraHeaders,omitempty"`
 }
 
 // ModelRegistry holds model configurations keyed by shorthand name

@@ -22,7 +22,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         python3-dev python3-pip python3-venv \
         libssl-dev libffi-dev \
         # Search tools
-        ripgrep fd-find && \
+        ripgrep fd-find \
+        # GPG for GitHub CLI keyring
+        gnupg && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

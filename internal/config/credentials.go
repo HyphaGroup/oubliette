@@ -2,21 +2,8 @@ package config
 
 // CredentialRegistry holds all credentials
 type CredentialRegistry struct {
-	Factory   FactoryCredentials  `json:"factory"`
 	GitHub    GitHubCredentials   `json:"github"`
 	Providers ProviderCredentials `json:"providers"`
-}
-
-// FactoryCredentials holds Factory API key credentials
-type FactoryCredentials struct {
-	Credentials map[string]FactoryCredential `json:"credentials"`
-	Default     string                       `json:"default"`
-}
-
-// FactoryCredential is a single Factory API key
-type FactoryCredential struct {
-	APIKey      string `json:"api_key"`
-	Description string `json:"description"`
 }
 
 // GitHubCredentials holds GitHub token credentials
@@ -42,22 +29,6 @@ type ProviderCredential struct {
 	Provider    string `json:"provider"` // anthropic, openai, google
 	APIKey      string `json:"api_key"`
 	Description string `json:"description"`
-}
-
-// GetFactoryKey returns the Factory API key for a named credential
-func (r *CredentialRegistry) GetFactoryKey(name string) (string, bool) {
-	if cred, ok := r.Factory.Credentials[name]; ok {
-		return cred.APIKey, true
-	}
-	return "", false
-}
-
-// GetDefaultFactoryKey returns the default Factory API key
-func (r *CredentialRegistry) GetDefaultFactoryKey() (string, bool) {
-	if r.Factory.Default == "" {
-		return "", false
-	}
-	return r.GetFactoryKey(r.Factory.Default)
 }
 
 // GetGitHubToken returns the GitHub token for a named credential
@@ -92,12 +63,6 @@ func (r *CredentialRegistry) GetDefaultProviderCredential() (*ProviderCredential
 	return r.GetProviderCredential(r.Providers.Default)
 }
 
-// HasFactoryCredential checks if a factory credential exists
-func (r *CredentialRegistry) HasFactoryCredential(name string) bool {
-	_, ok := r.Factory.Credentials[name]
-	return ok
-}
-
 // HasGitHubCredential checks if a github credential exists
 func (r *CredentialRegistry) HasGitHubCredential(name string) bool {
 	_, ok := r.GitHub.Credentials[name]
@@ -127,7 +92,6 @@ type ProviderCredentialInfo struct {
 
 // CredentialsList is the response for project_options
 type CredentialsList struct {
-	Factory   []CredentialInfo         `json:"factory"`
 	GitHub    []CredentialInfo         `json:"github"`
 	Providers []ProviderCredentialInfo `json:"providers"`
 }
@@ -135,17 +99,8 @@ type CredentialsList struct {
 // ListCredentials returns all credentials without sensitive data
 func (r *CredentialRegistry) ListCredentials() CredentialsList {
 	result := CredentialsList{
-		Factory:   make([]CredentialInfo, 0, len(r.Factory.Credentials)),
 		GitHub:    make([]CredentialInfo, 0, len(r.GitHub.Credentials)),
 		Providers: make([]ProviderCredentialInfo, 0, len(r.Providers.Credentials)),
-	}
-
-	for name, cred := range r.Factory.Credentials {
-		result.Factory = append(result.Factory, CredentialInfo{
-			Name:        name,
-			Description: cred.Description,
-			IsDefault:   name == r.Factory.Default,
-		})
 	}
 
 	for name, cred := range r.GitHub.Credentials {

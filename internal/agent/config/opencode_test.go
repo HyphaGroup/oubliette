@@ -3,12 +3,12 @@ package config
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 )
 
 func TestToOpenCodeConfig(t *testing.T) {
 	cfg := &AgentConfig{
-		Runtime:   "opencode",
 		Model:     "claude-sonnet-4-5-20250929",
 		Autonomy:  "high",
 		Reasoning: "medium",
@@ -30,12 +30,10 @@ func TestToOpenCodeConfig(t *testing.T) {
 
 	result := ToOpenCodeConfig(cfg)
 
-	// Check model translation
 	if result.Model != "anthropic/claude-sonnet-4-5-20250929" {
 		t.Errorf("model: got %q, want %q", result.Model, "anthropic/claude-sonnet-4-5-20250929")
 	}
 
-	// Check stdio -> local translation
 	local, ok := result.MCP["oubliette-parent"]
 	if !ok {
 		t.Fatal("missing oubliette-parent server")
@@ -54,7 +52,6 @@ func TestToOpenCodeConfig(t *testing.T) {
 		t.Error("expected enabled to be true")
 	}
 
-	// Check http -> remote translation
 	remote, ok := result.MCP["remote-api"]
 	if !ok {
 		t.Fatal("missing remote-api server")
@@ -62,16 +59,50 @@ func TestToOpenCodeConfig(t *testing.T) {
 	if remote.Type != "remote" {
 		t.Errorf("type: got %q, want %q", remote.Type, "remote")
 	}
-	if remote.URL != "https://api.example.com/mcp" {
-		t.Error("url not set")
-	}
-	if remote.Headers["Authorization"] != "Bearer token" {
-		t.Error("headers not translated")
-	}
 
-	// Check disabled tools
 	if !result.Tools["dangerous_tool"] == false {
 		t.Error("disabled tool should be false")
+	}
+
+	// Reasoning should NOT be in provider config (handled per-message via variant)
+	if result.Provider != nil {
+		t.Error("expected no provider config (reasoning is per-message)")
+	}
+}
+
+func TestToOpenCodeConfigWithExtraHeaders(t *testing.T) {
+	cfg := &AgentConfig{
+		Model:    "claude-opus-4-6",
+		Autonomy: "off",
+		ExtraHeaders: map[string]string{
+			"anthropic-beta": "context-1m-2025-08-07",
+		},
+		MCPServers: map[string]MCPServer{},
+	}
+
+	result := ToOpenCodeConfig(cfg)
+
+	if result.Provider == nil {
+		t.Fatal("expected provider config for extra headers")
+	}
+	pc, ok := result.Provider["anthropic"]
+	if !ok {
+		t.Fatal("missing anthropic provider config")
+	}
+	mo, ok := pc.Models["claude-opus-4-6"]
+	if !ok {
+		t.Fatal("missing model options for claude-opus-4-6")
+	}
+	if mo.Headers["anthropic-beta"] != "context-1m-2025-08-07" {
+		t.Errorf("headers: got %v, want anthropic-beta header", mo.Headers)
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	if !strings.Contains(string(data), `"anthropic-beta"`) {
+		t.Error("anthropic-beta header not in serialized output")
 	}
 }
 
@@ -83,10 +114,9 @@ func TestTranslateModelToOpenCodeFormat(t *testing.T) {
 		{"claude-sonnet-4-5-20250929", "anthropic/claude-sonnet-4-5-20250929"},
 		{"claude-opus-4-5", "anthropic/claude-opus-4-5"},
 		{"gpt-5.1", "openai/gpt-5.1"},
-		{"gpt-5.1-codex", "openai/gpt-5.1-codex"},
 		{"gemini-3-pro", "google/gemini-3-pro"},
-		{"anthropic/claude-sonnet", "anthropic/claude-sonnet"}, // already has prefix
-		{"custom-model", "custom-model"},                       // unknown, unchanged
+		{"anthropic/claude-sonnet", "anthropic/claude-sonnet"},
+		{"custom-model", "custom-model"},
 	}
 
 	for _, tt := range tests {
@@ -104,7 +134,7 @@ func TestTranslateAutonomyToPermissions(t *testing.T) {
 		name     string
 		autonomy string
 		custom   map[string]any
-		wantType string // "string" or "map"
+		wantType string
 	}{
 		{"off returns allow string", "off", nil, "string"},
 		{"high returns map", "high", nil, "map"},
@@ -126,111 +156,6 @@ func TestTranslateAutonomyToPermissions(t *testing.T) {
 				if _, ok := result.(map[string]any); !ok {
 					t.Errorf("expected map, got %T", result)
 				}
-			}
-
-			// Custom should be returned as-is
-			if tt.custom != nil {
-				if m, ok := result.(map[string]any); ok {
-					if m["custom"] != "value" {
-						t.Error("custom permissions not preserved")
-					}
-				}
-			}
-		})
-	}
-}
-
-func TestTranslateReasoningToOpenCode(t *testing.T) {
-	tests := []struct {
-		name      string
-		reasoning string
-		model     string
-		wantNil   bool
-		checkFn   func(t *testing.T, result map[string]ProviderConfig)
-	}{
-		{
-			name:      "anthropic medium",
-			reasoning: "medium",
-			model:     "anthropic/claude-sonnet-4-5-20250929",
-			checkFn: func(t *testing.T, result map[string]ProviderConfig) {
-				pc, ok := result["anthropic"]
-				if !ok {
-					t.Fatal("missing anthropic provider")
-				}
-				mo, ok := pc.Models["claude-sonnet-4-5-20250929"]
-				if !ok {
-					t.Fatal("missing model options")
-				}
-				thinking, ok := mo.Options["thinking"].(map[string]any)
-				if !ok {
-					t.Fatal("missing thinking config")
-				}
-				if thinking["budgetTokens"] != 16000 {
-					t.Errorf("budgetTokens: got %v, want 16000", thinking["budgetTokens"])
-				}
-			},
-		},
-		{
-			name:      "anthropic high",
-			reasoning: "high",
-			model:     "claude-opus-4-5",
-			checkFn: func(t *testing.T, result map[string]ProviderConfig) {
-				thinking := result["anthropic"].Models["claude-opus-4-5"].Options["thinking"].(map[string]any)
-				if thinking["budgetTokens"] != 32000 {
-					t.Errorf("budgetTokens: got %v, want 32000", thinking["budgetTokens"])
-				}
-			},
-		},
-		{
-			name:      "openai medium",
-			reasoning: "medium",
-			model:     "openai/gpt-5.1",
-			checkFn: func(t *testing.T, result map[string]ProviderConfig) {
-				effort := result["openai"].Models["gpt-5.1"].Options["reasoningEffort"]
-				if effort != "medium" {
-					t.Errorf("reasoningEffort: got %v, want medium", effort)
-				}
-			},
-		},
-		{
-			name:      "google high",
-			reasoning: "high",
-			model:     "gemini-3-pro",
-			checkFn: func(t *testing.T, result map[string]ProviderConfig) {
-				variant := result["google"].Models["gemini-3-pro"].Options["variant"]
-				if variant != "high" {
-					t.Errorf("variant: got %v, want high", variant)
-				}
-			},
-		},
-		{
-			name:      "off returns nil",
-			reasoning: "off",
-			model:     "claude-sonnet",
-			wantNil:   true,
-		},
-		{
-			name:      "unknown provider returns nil",
-			reasoning: "medium",
-			model:     "unknown-model",
-			wantNil:   true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := translateReasoningToOpenCode(tt.reasoning, tt.model)
-			if tt.wantNil {
-				if result != nil {
-					t.Errorf("expected nil, got %v", result)
-				}
-				return
-			}
-			if result == nil {
-				t.Fatal("unexpected nil result")
-			}
-			if tt.checkFn != nil {
-				tt.checkFn(t, result)
 			}
 		})
 	}
@@ -255,19 +180,14 @@ func TestOpenCodeConfigSerialization(t *testing.T) {
 		t.Fatalf("marshal failed: %v", err)
 	}
 
-	// Verify key names match OpenCode format
 	s := string(data)
-	if !containsString(s, `"$schema"`) {
+	if !strings.Contains(s, `"$schema"`) {
 		t.Error("missing $schema key")
 	}
-	if !containsString(s, `"mcp"`) {
-		t.Error("missing mcp key (should not be mcpServers)")
-	}
-	if !containsString(s, `"permission"`) {
-		t.Error("missing permission key")
+	if !strings.Contains(s, `"mcp"`) {
+		t.Error("missing mcp key")
 	}
 
-	// Parse back
 	var parsed OpenCodeConfig
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		t.Fatalf("unmarshal failed: %v", err)

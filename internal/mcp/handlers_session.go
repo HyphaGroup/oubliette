@@ -85,7 +85,7 @@ type sessionEnv struct {
 
 // prepareSessionEnvironment validates and prepares the environment for session operations.
 // Handles: auth check, project load, workspace resolution, container startup.
-func (s *Server) prepareSessionEnvironment(ctx context.Context, projectID, workspaceID string, createWorkspace bool, externalID, source string, mcpContext map[string]interface{}) (*sessionEnv, error) {
+func (s *Server) prepareSessionEnvironment(ctx context.Context, projectID, workspaceID string, createWorkspace bool, externalID, source string) (*sessionEnv, error) {
 	authCtx, err := requireProjectAccess(ctx, projectID)
 	if err != nil {
 		return nil, err
@@ -108,11 +108,6 @@ func (s *Server) prepareSessionEnvironment(ctx context.Context, projectID, works
 	// Update workspace timestamp
 	if err := s.projectMgr.UpdateWorkspaceLastSession(projectID, resolvedWorkspaceID); err != nil {
 		logger.Error("Failed to update workspace last_session_at: %v", err)
-	}
-
-	// Write MCP config
-	if err := s.writeMCPConfigForWorkspace(projectID, resolvedWorkspaceID, mcpContext); err != nil {
-		logger.Error("Failed to write MCP config for workspace: %v", err)
 	}
 
 	// Ensure container is running
@@ -206,23 +201,6 @@ func (s *Server) spawnAndRegisterSession(ctx context.Context, projectID, contain
 		}
 	}()
 
-	// Set up final response fetcher - called when session completes to get final text
-	activeSess.FinalResponseFetcher = func() string {
-		droidSessionID := ""
-		if exec := activeSess.GetExecutor(); exec != nil {
-			droidSessionID = exec.RuntimeSessionID()
-		}
-		if droidSessionID == "" {
-			return ""
-		}
-		finalResp, err := s.readFinalResponseFromSession(context.Background(), projectID, workspaceID, droidSessionID)
-		if err != nil {
-			logger.Error("Failed to fetch final response for session %s: %v", sess.SessionID, err)
-			return ""
-		}
-		return finalResp
-	}
-
 	return sess, activeSess, nil
 }
 
@@ -257,29 +235,26 @@ func (s *Server) handleSpawn(ctx context.Context, request *mcp.CallToolRequest, 
 	isPrime := mcpCtx.SessionID == ""
 
 	if isPrime {
-		return s.handleSpawnPrime(ctx, params)
+		return s.handleSpawnPrime(ctx, request, params)
 	}
 	return s.handleSpawnChild(ctx, mcpCtx, params)
 }
 
-func (s *Server) handleSpawnPrime(ctx context.Context, params *SpawnParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleSpawnPrime(ctx context.Context, request *mcp.CallToolRequest, params *SpawnParams) (*mcp.CallToolResult, any, error) {
 	if params.ProjectID == "" {
 		return nil, nil, fmt.Errorf("project_id is required for prime gogol")
 	}
 
 	// Check for API credentials before attempting to spawn a session
 	if !s.HasAPICredentials() {
-		return nil, nil, fmt.Errorf("no API credentials configured - add credentials.factory.api_key or credentials.providers in oubliette.jsonc")
+		return nil, nil, fmt.Errorf("no API credentials configured - add credentials.providers in oubliette.jsonc")
 	}
 
 	// Prepare environment using shared helper
-	env, err := s.prepareSessionEnvironment(ctx, params.ProjectID, params.WorkspaceID, params.CreateWorkspace, params.ExternalID, params.Source, params.Context)
+	env, err := s.prepareSessionEnvironment(ctx, params.ProjectID, params.WorkspaceID, params.CreateWorkspace, params.ExternalID, params.Source)
 	if err != nil {
 		return nil, nil, SanitizeError(err, "prepare session environment")
 	}
-
-	// Get runtime for this project (may be different from server default)
-	projectRuntime := s.GetRuntimeForProject(env.project)
 
 	// Use project model as default if not specified in params
 	model := params.Model
@@ -297,7 +272,7 @@ func (s *Server) handleSpawnPrime(ctx context.Context, params *SpawnParams) (*mc
 		ToolsDisallowed:    params.ToolsDisallowed,
 		AppendSystemPrompt: params.AppendSystemPrompt,
 		WorkspaceIsolation: env.project.WorkspaceIsolation,
-		RuntimeOverride:    projectRuntime,
+		RuntimeOverride:    s.agentRuntime,
 	}
 
 	var sess *session.Session
@@ -307,7 +282,7 @@ func (s *Server) handleSpawnPrime(ctx context.Context, params *SpawnParams) (*mc
 	// Try to resume existing session if not forcing new
 	if !params.NewSession {
 		existingSession, err := s.sessionMgr.GetLatestSession(params.ProjectID)
-		if err == nil && existingSession != nil && existingSession.DroidSessionID != "" {
+		if err == nil && existingSession != nil && existingSession.RuntimeSessionID != "" {
 			logger.Info("Resuming existing session %s for project %s", existingSession.SessionID, params.ProjectID)
 			resumedSess, executor, resumeErr := s.sessionMgr.ResumeBidirectionalSession(ctx, existingSession, env.containerName, params.Prompt, opts)
 			if resumeErr != nil {
@@ -315,29 +290,20 @@ func (s *Server) handleSpawnPrime(ctx context.Context, params *SpawnParams) (*mc
 			} else {
 				isResume = true
 				sess = resumedSess
-				activeSess = session.NewActiveSession(sess.SessionID, params.ProjectID, env.workspaceID, env.containerName, executor)
 
-				// Set up final response fetcher for resumed sessions
-				activeSess.FinalResponseFetcher = func() string {
-					droidSessionID := ""
-					if exec := activeSess.GetExecutor(); exec != nil {
-						droidSessionID = exec.RuntimeSessionID()
+				// Reuse existing active session if available (avoids duplicate event goroutines)
+				if existing, ok := s.activeSessions.Get(sess.SessionID); ok {
+					activeSess = existing
+					activeSess.SetExecutor(executor)
+					s.activeSessions.RestartEventCollection(activeSess)
+				} else {
+					activeSess = session.NewActiveSession(sess.SessionID, params.ProjectID, env.workspaceID, env.containerName, executor)
+					if err := s.activeSessions.Register(activeSess); err != nil {
+						_ = executor.Close()
+						return nil, nil, fmt.Errorf("failed to register active session: %w", err)
 					}
-					if droidSessionID == "" {
-						return ""
-					}
-					finalResp, err := s.readFinalResponseFromSession(context.Background(), params.ProjectID, env.workspaceID, droidSessionID)
-					if err != nil {
-						logger.Error("Failed to fetch final response for session %s: %v", sess.SessionID, err)
-						return ""
-					}
-					return finalResp
 				}
 
-				if err := s.activeSessions.Register(activeSess); err != nil {
-					_ = executor.Close()
-					return nil, nil, fmt.Errorf("failed to register active session: %w", err)
-				}
 			}
 		}
 	}
@@ -353,6 +319,9 @@ func (s *Server) handleSpawnPrime(ctx context.Context, params *SpawnParams) (*mc
 		}
 	}
 
+	// Set MCP session for SSE event push
+	activeSess.SetMCPSession(request.Session)
+
 	// Build result message
 	var result string
 	if isResume {
@@ -360,7 +329,7 @@ func (s *Server) handleSpawnPrime(ctx context.Context, params *SpawnParams) (*mc
 		result = fmt.Sprintf("✅ Session resumed: %s\n\n", sess.SessionID)
 		result += fmt.Sprintf("Project: %s\n", params.ProjectID)
 		result += fmt.Sprintf("Workspace: %s\n", env.workspaceID)
-		result += fmt.Sprintf("Droid Session: %s\n", sess.DroidSessionID)
+		result += fmt.Sprintf("Runtime Session: %s\n", sess.RuntimeSessionID)
 		result += fmt.Sprintf("Turns: %d\n", len(sess.Turns))
 	} else {
 		logger.Info("New session created: %s", sess.SessionID)
@@ -372,7 +341,7 @@ func (s *Server) handleSpawnPrime(ctx context.Context, params *SpawnParams) (*mc
 		} else {
 			result += "\n"
 		}
-		result += fmt.Sprintf("Droid Session: %s\n", sess.DroidSessionID)
+		result += fmt.Sprintf("Runtime Session: %s\n", sess.RuntimeSessionID)
 	}
 	result += fmt.Sprintf("Status: %s\n\n", activeSess.GetStatus())
 	result += "Use session_events to get streaming output\n"
@@ -381,48 +350,6 @@ func (s *Server) handleSpawnPrime(ctx context.Context, params *SpawnParams) (*mc
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: result}},
 	}, nil, nil
-}
-
-func (s *Server) writeMCPConfigForWorkspace(projectID, workspaceID string, ctx map[string]interface{}) error {
-	projectDir := s.projectMgr.GetProjectDir(projectID)
-	workspaceFactoryDir := filepath.Join(projectDir, "workspaces", workspaceID, ".factory")
-	mcpPath := filepath.Join(workspaceFactoryDir, "mcp.json")
-
-	var config map[string]interface{}
-	if data, err := os.ReadFile(mcpPath); err == nil {
-		if err := json.Unmarshal(data, &config); err != nil {
-			config = map[string]interface{}{"mcpServers": map[string]interface{}{}}
-		}
-	} else {
-		config = map[string]interface{}{"mcpServers": map[string]interface{}{}}
-	}
-
-	mcpServers, ok := config["mcpServers"].(map[string]interface{})
-	if !ok {
-		mcpServers = make(map[string]interface{})
-		config["mcpServers"] = mcpServers
-	}
-
-	if ctx != nil {
-		if contextServers, ok := ctx["mcp_servers"].(map[string]interface{}); ok {
-			for name, serverConfig := range contextServers {
-				mcpServers[name] = serverConfig
-			}
-		}
-	}
-
-	mcpServers["oubliette-parent"] = map[string]interface{}{
-		"type":    "stdio",
-		"command": "/usr/local/bin/oubliette-client",
-		"args":    []string{"/mcp/relay.sock"},
-	}
-
-	data, err := json.MarshalIndent(config, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal mcp config: %w", err)
-	}
-
-	return os.WriteFile(mcpPath, data, 0o644)
 }
 
 func (s *Server) handleSpawnChild(ctx context.Context, mcpCtx MCPContext, params *SpawnParams) (*mcp.CallToolResult, any, error) {
@@ -705,7 +632,7 @@ type SendMessageParams struct {
 	ToolsAllowed       []string `json:"tools_allowed,omitempty"`
 	ToolsDisallowed    []string `json:"tools_disallowed,omitempty"`
 
-	// Caller tool relay - allows caller to expose tools to the Droid
+	// Caller tool relay - allows caller to expose tools to the agent
 	CallerID    string                         `json:"caller_id,omitempty"`
 	CallerTools []session.CallerToolDefinition `json:"caller_tools,omitempty"`
 
@@ -931,7 +858,7 @@ func (s *Server) handleSendMessage(ctx context.Context, request *mcp.CallToolReq
 	// Slow path: prepare environment and spawn new session
 	logger.Info("No active session for workspace %s, spawning new session", workspaceID)
 
-	env, err := s.prepareSessionEnvironment(ctx, params.ProjectID, workspaceID, params.CreateWorkspace, params.ExternalID, params.Source, params.Context)
+	env, err := s.prepareSessionEnvironment(ctx, params.ProjectID, workspaceID, params.CreateWorkspace, params.ExternalID, params.Source)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -943,9 +870,6 @@ func (s *Server) handleSendMessage(ctx context.Context, request *mcp.CallToolReq
 			// Non-fatal - continue without state file (stop hook will just not be active)
 		}
 	}
-
-	// Get runtime for this project (may be different from server default)
-	projectRuntime := s.GetRuntimeForProject(env.project)
 
 	// Use project model as default if not specified in params
 	model := params.Model
@@ -962,7 +886,7 @@ func (s *Server) handleSendMessage(ctx context.Context, request *mcp.CallToolReq
 		ToolsDisallowed:    params.ToolsDisallowed,
 		AppendSystemPrompt: params.AppendSystemPrompt,
 		WorkspaceIsolation: env.project.WorkspaceIsolation,
-		RuntimeOverride:    projectRuntime,
+		RuntimeOverride:    s.agentRuntime,
 	}
 
 	// Build spawn config with all session configuration
@@ -1121,12 +1045,12 @@ func (s *Server) handleSessionEvents(ctx context.Context, request *mcp.CallToolR
 
 	// If session is completed, try to read the final response from the session file
 	if status == session.ActiveStatusCompleted {
-		droidSessionID := ""
+		runtimeSessionID := ""
 		if executor := activeSess.GetExecutor(); executor != nil {
-			droidSessionID = executor.RuntimeSessionID()
+			runtimeSessionID = executor.RuntimeSessionID()
 		}
-		if droidSessionID != "" {
-			if finalResponse, err := s.readFinalResponseFromSession(ctx, activeSess.ProjectID, activeSess.WorkspaceID, droidSessionID); err == nil && finalResponse != "" {
+		if runtimeSessionID != "" {
+			if finalResponse, err := s.readFinalResponseFromSession(ctx, activeSess.ProjectID, activeSess.WorkspaceID, runtimeSessionID); err == nil && finalResponse != "" {
 				structuredResult.FinalResponse = finalResponse
 			}
 		}
@@ -1158,12 +1082,12 @@ func (s *Server) handleSessionEvents(ctx context.Context, request *mcp.CallToolR
 }
 
 // readFinalResponseFromSession reads the last assistant message from the Factory session JSONL file
-func (s *Server) readFinalResponseFromSession(ctx context.Context, projectID, workspaceID, droidSessionID string) (string, error) {
+func (s *Server) readFinalResponseFromSession(ctx context.Context, projectID, workspaceID, runtimeSessionID string) (string, error) {
 	// The .factory directory is mounted from the host, so we can read directly
 	// Container path: /home/gogol/.factory/sessions/{encoded-cwd}/{session-id}.jsonl
 	// Host path: projects/{projectID}/.factory/sessions/{encoded-cwd}/{session-id}.jsonl
 	encodedCwd := fmt.Sprintf("-workspace-workspaces-%s", workspaceID)
-	sessionFile := filepath.Join(s.projectMgr.GetProjectDir(projectID), ".factory", "sessions", encodedCwd, droidSessionID+".jsonl")
+	sessionFile := filepath.Join(s.projectMgr.GetProjectDir(projectID), ".factory", "sessions", encodedCwd, runtimeSessionID+".jsonl")
 
 	// Read and parse the JSONL file to find the last assistant message
 	file, err := os.Open(sessionFile)

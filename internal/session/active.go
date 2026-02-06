@@ -3,7 +3,6 @@ package session
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -64,13 +63,10 @@ type ActiveSession struct {
 	callerID              string                              // ID of the caller (e.g., "myapp")
 	callerTools           []CallerToolDefinition              // Tools declared by the caller
 	pendingCallerRequests map[string]chan *CallerToolResponse // request_id -> response channel
-	// FinalResponseFetcher is called when session completes to get the final response
-	// It's set by the MCP handler which has access to the runtime
-	FinalResponseFetcher func() string
-	mu                   sync.RWMutex
-	executorMu           sync.RWMutex // Protects Executor field access
-	mcpMu                sync.RWMutex // Protects mcpSession field access
-	callerMu             sync.RWMutex // Protects callerID and callerTools fields
+	mu                    sync.RWMutex
+	executorMu            sync.RWMutex // Protects Executor field access
+	mcpMu                 sync.RWMutex // Protects mcpSession field access
+	callerMu              sync.RWMutex // Protects callerID and callerTools fields
 }
 
 // NewActiveSession creates a new active session
@@ -116,6 +112,13 @@ func (a *ActiveSession) GetExecutor() agent.StreamingExecutor {
 	a.executorMu.RLock()
 	defer a.executorMu.RUnlock()
 	return a.Executor
+}
+
+// SetExecutor replaces the executor (used when resuming a session with a new connection)
+func (a *ActiveSession) SetExecutor(executor agent.StreamingExecutor) {
+	a.executorMu.Lock()
+	defer a.executorMu.Unlock()
+	a.Executor = executor
 }
 
 // CloseExecutor safely closes the executor with write lock protection
@@ -258,6 +261,15 @@ func (a *ActiveSession) GetMCPSession() *mcp.ServerSession {
 	return a.mcpSession
 }
 
+// eventNotification is the structured payload sent as MCP log notifications.
+type eventNotification struct {
+	SessionID     string `json:"session_id"`
+	Type          string `json:"type"`
+	Text          string `json:"text,omitempty"`
+	ToolName      string `json:"tool_name,omitempty"`
+	FinalResponse string `json:"final_response,omitempty"`
+}
+
 // NotifyEvent sends a session event to the connected MCP client via Log.
 // Returns nil if no MCP session is connected (graceful degradation).
 func (a *ActiveSession) NotifyEvent(ctx context.Context, event *agent.StreamEvent) error {
@@ -266,35 +278,24 @@ func (a *ActiveSession) NotifyEvent(ctx context.Context, event *agent.StreamEven
 	a.mcpMu.RUnlock()
 
 	if session == nil {
-		return nil // No MCP client watching, events still buffered
+		return nil
 	}
 
-	// Format event as LoggingMessageParams
-	eventData := map[string]interface{}{
-		"session_id": a.SessionID,
-		"type":       string(event.Type),
+	data := eventNotification{
+		SessionID: a.SessionID,
+		Type:      string(event.Type),
+		Text:      event.Text,
+		ToolName:  event.ToolName,
 	}
-	if event.Text != "" {
-		eventData["text"] = event.Text
-	}
-	if event.ToolName != "" {
-		eventData["tool_name"] = event.ToolName
-	}
-	if event.Role != "" {
-		eventData["role"] = event.Role
-	}
-	// Include final response for completion events
 	if event.Type == agent.StreamEventCompletion && event.FinalText != "" {
-		eventData["final_response"] = event.FinalText
+		data.FinalResponse = event.FinalText
 	}
 
-	params := &mcp.LoggingMessageParams{
+	if err := session.Log(ctx, &mcp.LoggingMessageParams{
 		Logger: "oubliette.session",
 		Level:  "info",
-		Data:   eventData,
-	}
-
-	if err := session.Log(ctx, params); err != nil {
+		Data:   data,
+	}); err != nil {
 		logger.Error("Failed to push event to MCP client: %v", err)
 		return err
 	}
@@ -371,6 +372,12 @@ func (m *ActiveSessionManager) Register(sess *ActiveSession) error {
 	go m.collectEvents(sess)
 
 	return nil
+}
+
+// RestartEventCollection starts a new event collection goroutine for a session
+// whose executor has been replaced (e.g., after resume).
+func (m *ActiveSessionManager) RestartEventCollection(sess *ActiveSession) {
+	go m.collectEvents(sess)
 }
 
 // Get returns an active session by ID
@@ -531,73 +538,70 @@ func (m *ActiveSessionManager) Close() {
 // collectEvents reads events from the executor and buffers them
 func (m *ActiveSessionManager) collectEvents(sess *ActiveSession) {
 	defer func() {
-		// Mark session as completed when executor exits
 		status := sess.GetStatus()
 		if status == ActiveStatusRunning || status == ActiveStatusIdle {
 			sess.SetStatus(ActiveStatusCompleted, nil)
 		}
 	}()
 
-	// Get executor reference once at start - the channels are safe to use
-	// even if executor is closed, as they will simply close/return
 	executor := sess.GetExecutor()
 	if executor == nil {
 		return
 	}
 
+	var lastAssistantText string
+	var completionNotified bool
+
 	for {
 		select {
 		case <-m.ctx.Done():
 			return
-		case <-executor.Done():
-			// Session ended - push a completion event to notify client
-			completionEvent := &agent.StreamEvent{
-				Type:      agent.StreamEventCompletion,
-				Timestamp: time.Now().UnixMilli(),
-			}
-			// Try to fetch final response if fetcher is available
-			// Retry with delays to allow Factory droid to flush the JSONL file to disk
-			if sess.FinalResponseFetcher != nil {
-				var finalText string
-				for i := 0; i < 5; i++ {
-					time.Sleep(1 * time.Second)
-					finalText = sess.FinalResponseFetcher()
-					if finalText != "" {
-						break
-					}
-				}
-				if finalText != "" {
-					completionEvent.FinalText = finalText
-					completionEvent.Text = finalText
-				}
-			}
-			sess.EventBuffer.Append(completionEvent)
-			if err := sess.NotifyEvent(context.Background(), completionEvent); err != nil {
-				logger.Error("Failed to push completion event for session %s: %v", sess.SessionID, err)
-			}
-			return
+
 		case event, ok := <-executor.Events():
 			if !ok {
 				return
 			}
+			// If executor was replaced (session resumed), exit so the new goroutine takes over
+			if sess.GetExecutor() != executor {
+				return
+			}
 
-			// Update status based on event type
+			// Track status transitions
 			if event.Type == agent.StreamEventCompletion {
-				// Turn complete - session is now idle, waiting for next message
 				sess.SetStatus(ActiveStatusIdle, nil)
 			} else if sess.GetStatus() == ActiveStatusIdle && isWorkEvent(event) {
-				// Receiving work events after idle means we're processing again
 				sess.SetStatus(ActiveStatusRunning, nil)
+				completionNotified = false
+				lastAssistantText = ""
+			}
+
+			// Track last consolidated assistant message for attaching to completion
+			if event.Type == agent.StreamEventMessage && event.Text != "" {
+				lastAssistantText = event.Text
 			}
 
 			sess.EventBuffer.Append(event)
 
-			// Push event to MCP client via SSE (if connected)
-			// Use background context since the original request context may be done
+			if !isNotifiableEvent(event) {
+				continue
+			}
+
+			// Deduplicate completions and attach final response text
+			if event.Type == agent.StreamEventCompletion {
+				if completionNotified {
+					continue
+				}
+				completionNotified = true
+				if event.Text == "" && lastAssistantText != "" {
+					event.FinalText = lastAssistantText
+					event.Text = lastAssistantText
+				}
+			}
+
 			if err := sess.NotifyEvent(context.Background(), event); err != nil {
-				// Log error but don't fail - events are still buffered for polling
 				logger.Error("Failed to push SSE event for session %s: %v", sess.SessionID, err)
 			}
+
 		case err := <-executor.Errors():
 			if err != nil {
 				sess.SetStatus(ActiveStatusFailed, err)
@@ -607,23 +611,30 @@ func (m *ActiveSessionManager) collectEvents(sess *ActiveSession) {
 	}
 }
 
-// isWorkEvent returns true if the event indicates actual processing work
-// (as opposed to status notifications that don't indicate active processing)
-func isWorkEvent(event *agent.StreamEvent) bool {
+// isNotifiableEvent returns true for events worth pushing as MCP notifications.
+// Only completion (with final response), tool calls, and tool results are pushed.
+// Message updates, system metadata, and token deltas are too noisy.
+func isNotifiableEvent(event *agent.StreamEvent) bool {
 	switch event.Type {
-	case agent.StreamEventMessage:
-		// Only assistant messages indicate active work
-		// User messages are from SendMessage which already sets status to running
-		return event.Role == "assistant"
-	case agent.StreamEventToolCall,
-		agent.StreamEventToolResult:
+	case agent.StreamEventCompletion:
+		return true
+	case agent.StreamEventToolCall, agent.StreamEventToolResult:
+		return true
+	case agent.StreamEventError:
 		return true
 	default:
-		// For unknown types, check if it's a delta/streaming type by naming convention
-		typeStr := string(event.Type)
-		if strings.Contains(typeStr, "delta") || strings.Contains(typeStr, "text") {
-			return true
-		}
+		return false
+	}
+}
+
+// isWorkEvent returns true if the event indicates actual processing work
+func isWorkEvent(event *agent.StreamEvent) bool {
+	switch event.Type {
+	case agent.StreamEventDelta, agent.StreamEventToolCall, agent.StreamEventToolResult:
+		return true
+	case agent.StreamEventMessage:
+		return event.Role == "assistant"
+	default:
 		return false
 	}
 }

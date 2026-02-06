@@ -134,23 +134,8 @@ func (m *Manager) Create(req CreateProjectRequest) (*Project, error) {
 		}
 	}
 
-	// Copy template/.factory to project/.factory
+	// Copy templates to project
 	templateBaseDir := filepath.Join(filepath.Dir(m.projectsDir), "template")
-	templateFactoryDir := filepath.Join(templateBaseDir, ".factory")
-	projectFactoryDir := filepath.Join(projectDir, ".factory")
-	if _, err := os.Stat(templateFactoryDir); err == nil {
-		if err := m.copyDir(templateFactoryDir, projectFactoryDir); err != nil {
-			return nil, fmt.Errorf("failed to copy template .factory: %w", err)
-		}
-	} else {
-		// No template, create minimal structure
-		if err := os.MkdirAll(projectFactoryDir, 0o755); err != nil {
-			return nil, fmt.Errorf("failed to create .factory: %w", err)
-		}
-		if err := m.initializeFactoryConfig(projectDir); err != nil {
-			return nil, fmt.Errorf("failed to initialize factory config: %w", err)
-		}
-	}
 
 	// Copy template/openspec/ to project/openspec/ (for OpenSpec spec-driven workflow)
 	templateOpenspecDir := filepath.Join(templateBaseDir, "openspec")
@@ -215,7 +200,6 @@ func (m *Manager) Create(req CreateProjectRequest) (*Project, error) {
 		RemoteURL:          req.RemoteURL,
 		ImageName:          canonicalConfig.Container.ImageName,
 		ContainerType:      canonicalConfig.Container.Type,
-		AgentRuntime:       canonicalConfig.Agent.Runtime,
 		Model:              canonicalConfig.Agent.Model,
 		WorkspaceIsolation: canonicalConfig.WorkspaceIsolation,
 		ProtectedPaths:     canonicalConfig.ProtectedPaths,
@@ -227,7 +211,7 @@ func (m *Manager) Create(req CreateProjectRequest) (*Project, error) {
 		return nil, fmt.Errorf("failed to save project metadata: %w", err)
 	}
 
-	// Create default workspace (copies project .factory, creates workspace metadata)
+	// Create default workspace
 	if _, err := m.CreateWorkspace(projectID, defaultWorkspaceID, "", "project_create"); err != nil {
 		return nil, fmt.Errorf("failed to create default workspace: %w", err)
 	}
@@ -399,7 +383,7 @@ func (m *Manager) GetWorkspacePath(projectID, workspaceID string) string {
 	return filepath.Join(m.projectsDir, projectID, "workspaces", workspaceID)
 }
 
-// CreateWorkspace creates a new workspace with the given ID, copying project .factory
+// CreateWorkspace creates a new workspace with the given ID
 func (m *Manager) CreateWorkspace(projectID, workspaceID, externalID, source string) (*WorkspaceMetadata, error) {
 	if err := validation.ValidateProjectID(projectID); err != nil {
 		return nil, err
@@ -427,15 +411,6 @@ func (m *Manager) CreateWorkspace(projectID, workspaceID, externalID, source str
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, fmt.Errorf("failed to create workspace directory %s: %w", dir, err)
-		}
-	}
-
-	// Copy project .factory to workspace .factory
-	projectFactoryDir := filepath.Join(m.projectsDir, projectID, ".factory")
-	workspaceFactoryDir := filepath.Join(workspaceDir, ".factory")
-	if _, err := os.Stat(projectFactoryDir); err == nil {
-		if err := m.copyDir(projectFactoryDir, workspaceFactoryDir); err != nil {
-			return nil, fmt.Errorf("failed to copy .factory to workspace: %w", err)
 		}
 	}
 
@@ -699,34 +674,6 @@ func (m *Manager) copyFile(src, dst string) error {
 	return os.Chmod(dst, srcInfo.Mode())
 }
 
-// initializeFactoryConfig creates minimal Factory configuration files when template is not available
-func (m *Manager) initializeFactoryConfig(projectDir string) error {
-	factoryDir := filepath.Join(projectDir, ".factory")
-
-	// Create subdirectories
-	for _, subdir := range []string{"droids", "skills", "commands"} {
-		if err := os.MkdirAll(filepath.Join(factoryDir, subdir), 0o755); err != nil {
-			return fmt.Errorf("failed to create %s: %w", subdir, err)
-		}
-	}
-
-	// Create empty mcp.json
-	mcpConfig := map[string]interface{}{"mcpServers": map[string]interface{}{}}
-	mcpJSON, _ := json.MarshalIndent(mcpConfig, "", "  ")
-	if err := os.WriteFile(filepath.Join(factoryDir, "mcp.json"), mcpJSON, 0o644); err != nil {
-		return fmt.Errorf("failed to write mcp.json: %w", err)
-	}
-
-	// Create settings.json
-	settingsConfig := map[string]interface{}{"sessionDefaults": map[string]interface{}{}}
-	settingsJSON, _ := json.MarshalIndent(settingsConfig, "", "  ")
-	if err := os.WriteFile(filepath.Join(factoryDir, "settings.json"), settingsJSON, 0o644); err != nil {
-		return fmt.Errorf("failed to write settings.json: %w", err)
-	}
-
-	return nil
-}
-
 // buildCanonicalConfig creates a ProjectConfig from a CreateProjectRequest and defaults
 func (m *Manager) buildCanonicalConfig(projectID, defaultWorkspaceID string, req CreateProjectRequest, createdAt time.Time) *agentconfig.ProjectConfig {
 	// Get defaults
@@ -738,20 +685,19 @@ func (m *Manager) buildCanonicalConfig(projectID, defaultWorkspaceID string, req
 		containerType = defaults.Container.Type
 	}
 
-	// Determine agent runtime
-	runtime := req.AgentRuntime
-	if runtime == "" {
-		runtime = defaults.Agent.Runtime
-	}
-
 	// Determine model
-	model := req.Model
-	if model == "" {
-		model = defaults.Agent.Model
+	modelShorthand := req.Model
+	if modelShorthand == "" {
+		modelShorthand = defaults.Agent.Model
 	}
-	// Resolve shorthand model name to full model ID
+	// Resolve shorthand model name to full model ID and look up metadata
+	model := modelShorthand
+	var modelDef *config.ModelDefinition
 	if m.modelRegistry != nil {
-		model = m.modelRegistry.ResolveModel(model)
+		model = m.modelRegistry.ResolveModel(modelShorthand)
+		if def, ok := m.modelRegistry.GetModel(modelShorthand); ok {
+			modelDef = &def
+		}
 	}
 
 	// Determine autonomy
@@ -805,13 +751,17 @@ func (m *Manager) buildCanonicalConfig(projectID, defaultWorkspaceID string, req
 			ImageName: m.GetImageNameForType(containerType),
 		},
 		Agent: agentconfig.AgentConfig{
-			Runtime:       runtime,
 			Model:         model,
 			Autonomy:      autonomy,
 			Reasoning:     reasoning,
 			DisabledTools: req.DisabledTools,
 			MCPServers:    mcpServers,
 			Permissions:   req.Permissions,
+			ModelProvider: modelDefField(modelDef, func(d *config.ModelDefinition) string { return d.Provider }),
+			ModelDisplay:  modelDefField(modelDef, func(d *config.ModelDefinition) string { return d.DisplayName }),
+			ModelBaseURL:  modelDefField(modelDef, func(d *config.ModelDefinition) string { return d.BaseURL }),
+			ModelMaxOut:   modelDefInt(modelDef, func(d *config.ModelDefinition) int { return d.MaxOutputTokens }),
+			ExtraHeaders:  modelDefHeaders(modelDef),
 		},
 		Limits: agentconfig.LimitsConfig{
 			MaxRecursionDepth:   maxDepth,
@@ -830,7 +780,6 @@ func convertCredentialRefs(refs *CredentialRefs) *agentconfig.CredentialRefs {
 		return nil
 	}
 	return &agentconfig.CredentialRefs{
-		Factory:  refs.Factory,
 		GitHub:   refs.GitHub,
 		Provider: refs.Provider,
 	}
@@ -867,23 +816,9 @@ func (m *Manager) saveCanonicalConfig(cfg *agentconfig.ProjectConfig) error {
 	return nil
 }
 
-// generateRuntimeConfigs generates both Droid and OpenCode runtime configs from canonical config
+// generateRuntimeConfigs generates OpenCode runtime config from canonical config
 func (m *Manager) generateRuntimeConfigs(cfg *agentconfig.ProjectConfig) error {
 	projectDir := filepath.Join(m.projectsDir, cfg.ID)
-
-	// Ensure .factory directories exist
-	factoryDirs := []string{
-		filepath.Join(projectDir, ".factory"),
-		filepath.Join(projectDir, ".factory", "droids"),
-		filepath.Join(projectDir, ".factory", "skills"),
-		filepath.Join(projectDir, ".factory", "commands"),
-		filepath.Join(projectDir, ".factory", "hooks"),
-	}
-	for _, dir := range factoryDirs {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return fmt.Errorf("failed to create .factory directory %s: %w", dir, err)
-		}
-	}
 
 	// Ensure .opencode directories exist
 	opencodeDirs := []string{
@@ -897,18 +832,6 @@ func (m *Manager) generateRuntimeConfigs(cfg *agentconfig.ProjectConfig) error {
 		}
 	}
 
-	// Generate Droid MCP config
-	droidMCP := agentconfig.ToDroidMCPConfig(&cfg.Agent)
-	if err := m.writeJSON(filepath.Join(projectDir, ".factory", "mcp.json"), droidMCP); err != nil {
-		return fmt.Errorf("failed to write droid mcp config: %w", err)
-	}
-
-	// Generate Droid settings
-	droidSettings := agentconfig.ToDroidSettings(&cfg.Agent)
-	if err := m.writeJSON(filepath.Join(projectDir, ".factory", "settings.json"), droidSettings); err != nil {
-		return fmt.Errorf("failed to write droid settings: %w", err)
-	}
-
 	// Generate OpenCode config
 	openCodeCfg := agentconfig.ToOpenCodeConfig(&cfg.Agent)
 	if err := m.writeJSON(filepath.Join(projectDir, "opencode.json"), openCodeCfg); err != nil {
@@ -916,6 +839,27 @@ func (m *Manager) generateRuntimeConfigs(cfg *agentconfig.ProjectConfig) error {
 	}
 
 	return nil
+}
+
+func modelDefField(def *config.ModelDefinition, f func(*config.ModelDefinition) string) string {
+	if def == nil {
+		return ""
+	}
+	return f(def)
+}
+
+func modelDefInt(def *config.ModelDefinition, f func(*config.ModelDefinition) int) int {
+	if def == nil {
+		return 0
+	}
+	return f(def)
+}
+
+func modelDefHeaders(def *config.ModelDefinition) map[string]string {
+	if def == nil || len(def.ExtraHeaders) == 0 {
+		return nil
+	}
+	return def.ExtraHeaders
 }
 
 // writeJSON writes data as formatted JSON to a file atomically

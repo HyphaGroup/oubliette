@@ -27,19 +27,19 @@ const (
 
 // Session represents an AI agent session (gogol)
 type Session struct {
-	SessionID      string    `json:"session_id"`
-	ProjectID      string    `json:"project_id"`
-	WorkspaceID    string    `json:"workspace_id"` // UUID of workspace used
-	ContainerID    string    `json:"container_id"`
-	Status         Status    `json:"status"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
-	DroidSessionID string    `json:"droid_session_id"` // For session continuation
-	Model          string    `json:"model"`            // claude-opus-4-5-20251101, gpt-5.1, etc.
-	AutonomyLevel  string    `json:"autonomy_level"`   // low, medium, high
-	ReasoningLevel string    `json:"reasoning_level"`  // off, low, medium, high
-	Turns          []Turn    `json:"turns"`
-	TotalCost      Cost      `json:"total_cost"`
+	SessionID        string    `json:"session_id"`
+	ProjectID        string    `json:"project_id"`
+	WorkspaceID      string    `json:"workspace_id"` // UUID of workspace used
+	ContainerID      string    `json:"container_id"`
+	Status           Status    `json:"status"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+	RuntimeSessionID string    `json:"runtime_session_id"` // For session continuation
+	Model            string    `json:"model"`              // claude-opus-4-5-20251101, gpt-5.1, etc.
+	AutonomyLevel    string    `json:"autonomy_level"`     // low, medium, high
+	ReasoningLevel   string    `json:"reasoning_level"`    // off, low, medium, high
+	Turns            []Turn    `json:"turns"`
+	TotalCost        Cost      `json:"total_cost"`
 	// Recursion hierarchy fields
 	ParentSessionID *string                `json:"parent_session_id,omitempty"`
 	ChildSessions   []string               `json:"child_sessions,omitempty"`
@@ -65,7 +65,7 @@ type TurnOutput struct {
 	ExitCode      int    `json:"exit_code"`
 	Error         string `json:"error,omitempty"`
 	StreamingFile string `json:"streaming_file,omitempty"` // Path to streaming output file
-	// Note: files_modified and commands_run removed (Droid doesn't provide these)
+	// Note: files_modified and commands_run removed (not provided by runtime)
 }
 
 // Cost represents API usage cost

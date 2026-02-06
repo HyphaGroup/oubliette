@@ -4,7 +4,7 @@
 // Architecture:
 // - Container runs oubliette-relay which listens on /mcp/relay.sock
 // - Socket is published to host via --publish-socket
-// - oubliette-client (MCP server for droid) connects to relay as "downstream"
+// - oubliette-client (MCP server for agent) connects to relay as "downstream"
 // - This handler connects to the published socket as "upstream"
 // - Relay pairs upstream/downstream and pipes bytes
 // - oubliette-client sends tool requests (session_spawn, project_list)
@@ -61,7 +61,7 @@ func NewSocketHandler(server *Server) *SocketHandler {
 }
 
 // ConnectSession connects to the relay for a session and starts handling requests.
-// Called when a droid session starts. Runs in a goroutine.
+// Called when an agent session starts. Runs in a goroutine.
 // The context is used for cancellation propagation - when ctx is cancelled, the connection closes.
 func (h *SocketHandler) ConnectSession(ctx context.Context, projectID, sessionID string, depth int) error {
 	socketPath := SocketPath(projectID)
@@ -433,9 +433,7 @@ func (h *SocketHandler) handleSessionMessage(ctx context.Context, req *JSONRPCRe
 			StreamJSONRPC: true, // Streaming with MCP enabled
 		}
 
-		// Get runtime for this project (may be different from server default)
-		projectRuntime := h.server.GetRuntimeForProject(proj)
-		executor, err := projectRuntime.ExecuteStreaming(childCtx, execReq)
+		executor, err := h.server.agentRuntime.ExecuteStreaming(childCtx, execReq)
 		if err != nil {
 			_ = childConn.Close() // Close the upstream connection
 			h.childMu.Lock()

@@ -3,7 +3,6 @@ package session
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"time"
 
@@ -13,27 +12,27 @@ import (
 /*
 STREAMING SESSION ARCHITECTURE
 
-This file implements bidirectional streaming sessions between MCP clients and Factory Droids.
+This file implements bidirectional streaming sessions between MCP clients and OpenCode.
 
 Flow Overview:
-┌─────────────┐     ┌─────────────┐     ┌─────────────────┐     ┌─────────┐
-│ MCP Client  │────>│ MCP Server  │────>│ StreamingExecutor│────>│ Droid   │
-│             │<────│ (handlers)  │<────│ (stdin/stdout)   │<────│ Process │
-└─────────────┘     └─────────────┘     └─────────────────┘     └─────────┘
+┌─────────────┐     ┌─────────────┐     ┌─────────────────┐     ┌──────────┐
+│ MCP Client  │────>│ MCP Server  │────>│ StreamingExecutor│────>│ OpenCode │
+│             │<────│ (handlers)  │<────│ (HTTP+SSE)       │<────│ Server   │
+└─────────────┘     └─────────────┘     └─────────────────┘     └──────────┘
 
 Key Design Decisions:
 
-1. EXECUTOR OWNERSHIP: The StreamingExecutor owns the container's InteractiveExec.
-   - Executor manages stdin/stdout pipes to the droid process
-   - Events are read from stdout via readEvents() goroutine
-   - Messages sent via SendMessage() write to stdin
+1. EXECUTOR OWNERSHIP: The StreamingExecutor owns the HTTP/SSE connection.
+   - Executor manages HTTP requests and SSE event stream
+   - Events are read from SSE via processEvents() goroutine
+   - Messages sent via SendMessage() post to prompt_async endpoint
 
 2. CONTEXT PROPAGATION: The provided ctx is passed through to the executor.
-   - Canceling ctx will cancel the droid execution
+   - Canceling ctx will cancel the execution
    - This enables proper cleanup when sessions are terminated externally
 
-3. SESSION RESUMPTION: Sessions can be resumed using Factory's -s flag.
-   - DroidSessionID is captured from init response and stored in metadata
+3. SESSION RESUMPTION: Sessions can be resumed using the runtime session ID.
+   - RuntimeSessionID is captured from session creation and stored in metadata
    - ResumeBidirectionalSession() passes this ID to resume conversation
 
 4. ERROR HANDLING: Errors during setup cause immediate cleanup.
@@ -103,10 +102,7 @@ func (m *Manager) CreateBidirectionalSession(ctx context.Context, projectID, con
 	if opts.RuntimeOverride != nil {
 		if rt, ok := opts.RuntimeOverride.(agent.Runtime); ok {
 			runtime = rt
-			log.Printf("Using runtime override: %s", rt.Name())
 		}
-	} else {
-		log.Printf("Using default runtime: %s", runtime.Name())
 	}
 
 	// Start bidirectional streaming - use background context so executor survives request completion
@@ -118,12 +114,11 @@ func (m *Manager) CreateBidirectionalSession(ctx context.Context, projectID, con
 	}
 
 	// Capture runtime's session ID (available after init)
-	droidSessionID := executor.RuntimeSessionID()
-	if droidSessionID != "" {
-		session.DroidSessionID = droidSessionID
+	runtimeSessionID := executor.RuntimeSessionID()
+	if runtimeSessionID != "" {
+		session.RuntimeSessionID = runtimeSessionID
 	} else {
-		// Fallback to our generated ID if droid didn't return one
-		session.DroidSessionID = sessionID
+		session.RuntimeSessionID = sessionID
 	}
 
 	// Record the turn
@@ -176,7 +171,7 @@ func (m *Manager) ResumeBidirectionalSession(ctx context.Context, existingSessio
 		Prompt:         prompt,
 		ContainerID:    containerID,
 		WorkingDir:     workingDir,
-		SessionID:      existingSession.DroidSessionID, // Resume this session
+		SessionID:      existingSession.RuntimeSessionID, // Resume this session
 		ProjectID:      existingSession.ProjectID,
 		Depth:          existingSession.Depth,
 		Model:          opts.Model,

@@ -253,10 +253,8 @@ func (s *Server) createAndStartContainer(ctx context.Context, containerName, ima
 	_ = s.runtime.Remove(ctx, containerName, true)
 
 	projectDir := s.projectMgr.GetProjectDir(projectName)
-	projectFactoryDir := filepath.Join(projectDir, ".factory")
 
 	// Ensure directories exist
-	_ = os.MkdirAll(projectFactoryDir, 0o755)
 	_ = os.MkdirAll(filepath.Join(projectDir, "cache", "npm"), 0o755)
 	_ = os.MkdirAll(filepath.Join(projectDir, "cache", "pip"), 0o755)
 	_ = os.MkdirAll(filepath.Join(projectDir, "cache", "maven"), 0o755)
@@ -315,7 +313,6 @@ func (s *Server) createAndStartContainer(ctx context.Context, containerName, ima
 
 	// Build mount list
 	mounts := []container.Mount{
-		{Type: container.MountTypeBind, Source: projectFactoryDir, Target: "/home/gogol/.factory"},
 		{Type: container.MountTypeBind, Source: workspaceSource, Target: "/workspace"},
 		{Type: container.MountTypeBind, Source: filepath.Join(projectDir, "cache", "npm"), Target: "/home/gogol/.npm"},
 		{Type: container.MountTypeBind, Source: filepath.Join(projectDir, "cache", "pip"), Target: "/home/gogol/.cache/pip"},
@@ -325,9 +322,8 @@ func (s *Server) createAndStartContainer(ctx context.Context, containerName, ima
 		{Type: container.MountTypeBind, Source: filepath.Join(projectDir, "ssh"), Target: "/home/gogol/.ssh"},
 	}
 
-	// Note: config.json and opencode.json are already inside projectDir which is mounted at /workspace
-	// They don't need separate mounts. The .factory/ directory is mounted at /home/gogol/.factory
-	// so agents can read configs but writing to /workspace/.factory won't affect the real configs.
+	// Note: opencode.json is inside projectDir which is mounted at /workspace.
+	// The .opencode/ directory is also inside the project dir.
 
 	// Add protected path mounts (read-only)
 	mounts = append(mounts, additionalMounts...)

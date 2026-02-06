@@ -1,13 +1,12 @@
 {
-  "description": "Minimal runtime environment with essential tools",
+  "description": "Minimal agent runtime with OpenCode",
   "base_image": "debian:bookworm-slim",
   "includes": [
-    "bash",
     "curl",
-    "wget",
     "git",
-    "jq",
-    "Factory Droid CLI",
+    "ripgrep",
+    "openssh-client",
+    "OpenCode CLI",
     "oubliette-relay",
     "oubliette-client"
   ]

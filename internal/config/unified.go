@@ -18,19 +18,11 @@ type UnifiedConfig struct {
 
 // ServerSection contains server configuration
 type ServerSection struct {
-	Address      string       `json:"address"`
-	AgentRuntime string       `json:"agent_runtime"`
-	Droid        DroidSection `json:"droid"`
-}
-
-// DroidSection contains Droid-specific settings
-type DroidSection struct {
-	DefaultModel string `json:"default_model"`
+	Address string `json:"address"`
 }
 
 // CredentialsSection contains all API credentials
 type CredentialsSection struct {
-	Factory   FactoryCredentials  `json:"factory"`
 	GitHub    GitHubCredentials   `json:"github"`
 	Providers ProviderCredentials `json:"providers"`
 }
@@ -62,23 +54,25 @@ type ModelDefaults struct {
 // 2. ./config/oubliette.jsonc (project-local)
 // 3. ~/.oubliette/config/oubliette.jsonc (user global)
 func FindConfigPath(configDir string) (string, error) {
-	candidates := []string{}
-
-	// 1. Explicit config-dir flag
 	if configDir != "" {
-		candidates = append(candidates, filepath.Join(configDir, "oubliette.jsonc"))
+		path := filepath.Join(configDir, "oubliette.jsonc")
+		if _, err := os.Stat(path); err != nil {
+			return "", fmt.Errorf("oubliette.jsonc not found in %s", configDir)
+		}
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return path, nil
+		}
+		return abs, nil
 	}
 
-	// 2. Project-local
-	candidates = append(candidates, filepath.Join("config", "oubliette.jsonc"))
-
-	// 3. User global
-	homeDir, err := os.UserHomeDir()
-	if err == nil {
+	candidates := []string{
+		filepath.Join("config", "oubliette.jsonc"),
+	}
+	if homeDir, err := os.UserHomeDir(); err == nil {
 		candidates = append(candidates, filepath.Join(homeDir, ".oubliette", "config", "oubliette.jsonc"))
 	}
 
-	// Find first existing
 	for _, path := range candidates {
 		if _, err := os.Stat(path); err == nil {
 			abs, err := filepath.Abs(path)
@@ -99,7 +93,6 @@ func LoadUnifiedConfig(configPath string) (*UnifiedConfig, error) {
 		return nil, fmt.Errorf("reading %s: %w", configPath, err)
 	}
 
-	// Strip JSONC comments
 	jsonData := StripJSONComments(data)
 
 	var cfg UnifiedConfig
@@ -107,13 +100,8 @@ func LoadUnifiedConfig(configPath string) (*UnifiedConfig, error) {
 		return nil, fmt.Errorf("parsing %s: %w", configPath, err)
 	}
 
-	// Apply defaults for missing fields
 	applyUnifiedDefaults(&cfg)
 
-	// Initialize nil maps
-	if cfg.Credentials.Factory.Credentials == nil {
-		cfg.Credentials.Factory.Credentials = make(map[string]FactoryCredential)
-	}
 	if cfg.Credentials.GitHub.Credentials == nil {
 		cfg.Credentials.GitHub.Credentials = make(map[string]GitHubCredential)
 	}
@@ -131,18 +119,10 @@ func LoadUnifiedConfig(configPath string) (*UnifiedConfig, error) {
 }
 
 func applyUnifiedDefaults(cfg *UnifiedConfig) {
-	// Server defaults
 	if cfg.Server.Address == "" {
 		cfg.Server.Address = ":8080"
 	}
-	if cfg.Server.AgentRuntime == "" {
-		cfg.Server.AgentRuntime = "auto"
-	}
-	if cfg.Server.Droid.DefaultModel == "" {
-		cfg.Server.Droid.DefaultModel = "sonnet"
-	}
 
-	// Limits defaults
 	if cfg.Defaults.Limits.MaxRecursionDepth == 0 {
 		cfg.Defaults.Limits.MaxRecursionDepth = 3
 	}
@@ -153,13 +133,7 @@ func applyUnifiedDefaults(cfg *UnifiedConfig) {
 		cfg.Defaults.Limits.MaxCostUSD = 10.00
 	}
 
-	// Agent defaults
-	if cfg.Defaults.Agent.Runtime == "" {
-		cfg.Defaults.Agent.Runtime = "opencode"
-	}
-	if cfg.Defaults.Agent.Model == "" {
-		cfg.Defaults.Agent.Model = "sonnet"
-	}
+	// No hardcoded model fallback -- config must specify defaults.agent.model
 	if cfg.Defaults.Agent.Autonomy == "" {
 		cfg.Defaults.Agent.Autonomy = "off"
 	}
@@ -167,28 +141,23 @@ func applyUnifiedDefaults(cfg *UnifiedConfig) {
 		cfg.Defaults.Agent.Reasoning = "medium"
 	}
 
-	// Container defaults
 	if cfg.Defaults.Container.Type == "" {
 		cfg.Defaults.Container.Type = "dev"
 	}
 
-	// Container image defaults - use local names in dev mode, ghcr.io in production
 	if cfg.Containers == nil {
 		cfg.Containers = make(map[string]string)
 	}
 	if len(cfg.Containers) == 0 {
 		if isDevMode() {
-			// Development mode: use local images (built with build.sh)
 			cfg.Containers["base"] = "oubliette-base:latest"
 			cfg.Containers["dev"] = "oubliette-dev:latest"
 		} else {
-			// Production mode: use ghcr.io registry
 			cfg.Containers["base"] = "ghcr.io/hyphagroup/oubliette-base:latest"
 			cfg.Containers["dev"] = "ghcr.io/hyphagroup/oubliette-dev:latest"
 		}
 	}
 
-	// Backup defaults (enabled defaults to false intentionally)
 	if cfg.Defaults.Backup.Directory == "" {
 		cfg.Defaults.Backup.Directory = "data/backups"
 	}
@@ -200,23 +169,17 @@ func applyUnifiedDefaults(cfg *UnifiedConfig) {
 	}
 }
 
-// isDevMode returns true if OUBLIETTE_DEV=1 is set
 func isDevMode() bool {
 	return os.Getenv("OUBLIETTE_DEV") == "1"
 }
 
-// ToLoadedConfig converts UnifiedConfig to LoadedConfig for backwards compatibility
+// ToLoadedConfig converts UnifiedConfig to LoadedConfig
 func (u *UnifiedConfig) ToLoadedConfig(configDir string) *LoadedConfig {
 	return &LoadedConfig{
 		Server: ServerJSONConfig{
-			Address:      u.Server.Address,
-			AgentRuntime: u.Server.AgentRuntime,
-			Droid: DroidJSONConfig{
-				DefaultModel: u.Server.Droid.DefaultModel,
-			},
+			Address: u.Server.Address,
 		},
 		Credentials: &CredentialRegistry{
-			Factory:   u.Credentials.Factory,
 			GitHub:    u.Credentials.GitHub,
 			Providers: u.Credentials.Providers,
 		},
@@ -247,7 +210,5 @@ func (u *UnifiedConfig) GetModelRegistry() *ModelRegistry {
 
 // Validate checks that required configuration is present
 func (u *UnifiedConfig) Validate() error {
-	// No required fields - Factory API key is optional (OpenCode works without it)
-	// Server will use OpenCode runtime if no Factory key is configured
 	return nil
 }

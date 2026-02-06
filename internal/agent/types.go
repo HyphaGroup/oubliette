@@ -18,6 +18,7 @@ type StreamEventType string
 const (
 	StreamEventSystem     StreamEventType = "system"
 	StreamEventMessage    StreamEventType = "message"
+	StreamEventDelta      StreamEventType = "delta"
 	StreamEventToolCall   StreamEventType = "tool_call"
 	StreamEventToolResult StreamEventType = "tool_result"
 	StreamEventCompletion StreamEventType = "completion"

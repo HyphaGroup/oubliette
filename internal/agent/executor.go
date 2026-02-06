@@ -35,7 +35,7 @@ type StreamingExecutor interface {
 	Close() error
 
 	// RuntimeSessionID returns the backend's session identifier
-	// (e.g., Factory's session ID for Droid)
+	// (e.g., OpenCode's session ID)
 	RuntimeSessionID() string
 
 	// IsClosed returns whether the executor has been closed

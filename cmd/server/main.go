@@ -19,8 +19,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/HyphaGroup/oubliette/internal/agent"
-	agentdroid "github.com/HyphaGroup/oubliette/internal/agent/droid"
 	agentopencode "github.com/HyphaGroup/oubliette/internal/agent/opencode"
 	"github.com/HyphaGroup/oubliette/internal/auth"
 	"github.com/HyphaGroup/oubliette/internal/backup"
@@ -100,8 +98,8 @@ Examples:
   oubliette --daemon                     Start in background
   oubliette init                         Set up ~/.oubliette
   oubliette init --dir .                 Set up in current directory
-  oubliette mcp --setup droid            Configure MCP for Factory Droid
-  oubliette mcp --setup droid --dir .    Use current directory as oubliette home
+  oubliette mcp --setup claude            Configure MCP for Claude Desktop
+  oubliette mcp --setup claude-code      Configure MCP for Claude Code extension
 `, Version)
 }
 
@@ -163,7 +161,6 @@ func runServer() {
 	logger.Println("   \"The city remembered every one of its citizens...\"")
 	logger.Println("")
 
-	// Factory API key validation already done by cfg.Validate()
 	// Credentials and models are already loaded as part of cfg
 
 	// Log model info
@@ -233,58 +230,18 @@ func runServer() {
 	// Set containers on project manager for image name resolution
 	projectMgr.SetContainers(cfg.Containers)
 
-	// Initialize agent runtimes (Droid and OpenCode)
-	// Both are initialized upfront; per-project runtime selection happens via factory
-	factoryAPIKey, _ := cfg.Credentials.GetDefaultFactoryKey()
-	droidRuntime := agentdroid.NewRuntime(containerRuntime)
-	if err := droidRuntime.Initialize(context.Background(), &agent.RuntimeConfig{
-		DefaultModel:    cfg.Server.Droid.DefaultModel,
-		DefaultAutonomy: "",
-		APIKey:          factoryAPIKey,
-	}); err != nil {
-		logger.Fatalf("Failed to initialize Droid runtime: %v", err)
-	}
-
-	opencodeRuntime := agentopencode.NewRuntime(containerRuntime)
-	if err := opencodeRuntime.Initialize(context.Background(), &agent.RuntimeConfig{}); err != nil {
-		logger.Fatalf("Failed to initialize OpenCode runtime: %v", err)
-	}
-
-	// Create runtime factory for per-project runtime selection
-	runtimeFactory := func(runtimeType string) agent.Runtime {
-		switch runtimeType {
-		case "droid":
-			return droidRuntime
-		case "opencode":
-			return opencodeRuntime
-		default:
-			return nil
-		}
-	}
-
-	// Default runtime: Droid if Factory API key exists, otherwise OpenCode
-	var defaultRuntime agent.Runtime
-	hasProviderKey := false
-	if provCred, ok := cfg.Credentials.GetDefaultProviderCredential(); ok && provCred.APIKey != "" {
-		hasProviderKey = true
-	}
-
-	if factoryAPIKey != "" {
-		defaultRuntime = droidRuntime
-		logger.Println("🤖 Default agent runtime: Droid (Factory API key present)")
-	} else {
-		defaultRuntime = opencodeRuntime
-		logger.Println("🤖 Default agent runtime: OpenCode (no Factory API key)")
-		if !hasProviderKey {
-			logger.Println("⚠️  WARNING: No API keys configured in oubliette.jsonc")
-			logger.Println("   Sessions will fail until you add credentials.providers or credentials.factory")
-		}
+	// Initialize agent runtime (OpenCode)
+	agentRuntime := agentopencode.NewRuntime(containerRuntime)
+	logger.Println("🤖 Agent runtime: OpenCode")
+	if provCred, ok := cfg.Credentials.GetDefaultProviderCredential(); !ok || provCred.APIKey == "" {
+		logger.Println("⚠️  WARNING: No API keys configured in oubliette.jsonc")
+		logger.Println("   Sessions will fail until you add credentials.providers")
 	}
 
 	// Determine Oubliette MCP URL for session-specific configs
 	oublietteMCPURL := fmt.Sprintf("http://localhost%s/mcp", addr)
 
-	sessionMgr := session.NewManager(projectsDir, defaultRuntime, oublietteMCPURL)
+	sessionMgr := session.NewManager(projectsDir, agentRuntime, oublietteMCPURL)
 
 	// Load persistent session index
 	if err := sessionMgr.LoadIndex(); err != nil {
@@ -335,8 +292,7 @@ func runServer() {
 		Credentials:     cfg.Credentials,
 		ModelRegistry:   cfg.Models,
 		ImageManager:    imageManager,
-		AgentRuntime:    defaultRuntime,
-		RuntimeFactory:  runtimeFactory,
+		AgentRuntime:    agentRuntime,
 		ScheduleStore:   scheduleStore,
 	})
 
@@ -394,9 +350,7 @@ func runServer() {
 	case sig := <-shutdownChan:
 		logger.Printf("⚠️  Received signal %v, initiating graceful shutdown...", sig)
 
-		// Cancel context is available for future use if needed
 		_, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
 
 		// Close active sessions
 		logger.Println("   Closing active sessions...")
@@ -428,8 +382,8 @@ func runServer() {
 		logger.Println("✅ Shutdown complete")
 		_ = logger.Close()
 
-		// Exit cleanly
-		os.Exit(0)
+		cancel()
+		os.Exit(0) //nolint:gocritic // intentional exit after manual cleanup
 	}
 }
 
@@ -496,26 +450,12 @@ func cmdInit() {
 	// Create unified oubliette.jsonc config
 	unifiedConfig := `{
   // Oubliette Configuration
-  // Edit this file to configure your installation
 
   "server": {
-    "address": ":8080",
-    "agent_runtime": "auto",
-    "droid": {
-      "default_model": "sonnet"
-    }
+    "address": ":8080"
   },
 
   "credentials": {
-    "factory": {
-      "credentials": {
-        "default": {
-          "api_key": "",
-          "description": "Factory API key"
-        }
-      },
-      "default": "default"
-    },
     "github": {
       "credentials": {
         "default": {
@@ -538,7 +478,6 @@ func cmdInit() {
       "max_cost_usd": 10.0
     },
     "agent": {
-      "runtime": "droid",
       "model": "sonnet",
       "autonomy": "off",
       "reasoning": "medium",
@@ -867,7 +806,7 @@ func cmdUpgrade(args []string) {
 func cmdMCP(args []string) {
 	// Parse mcp flags
 	fs := flag.NewFlagSet("mcp", flag.ExitOnError)
-	setup := fs.String("setup", "", "Tool to configure: droid, claude, claude-code")
+	setup := fs.String("setup", "", "Tool to configure: claude, claude-code")
 	configFlag := fs.String("config", "", "Output MCP config file path (overrides tool default)")
 	dirFlag := fs.String("dir", "", "Oubliette directory (default: ~/.oubliette)")
 	_ = fs.Parse(args)
@@ -876,7 +815,6 @@ func cmdMCP(args []string) {
 		fmt.Println("Usage: oubliette mcp --setup <tool> [options]")
 		fmt.Println("")
 		fmt.Println("Tools:")
-		fmt.Println("  droid       Factory Droid (~/.factory/mcp.json)")
 		fmt.Println("  claude      Claude Desktop")
 		fmt.Println("  claude-code Claude Code VS Code extension")
 		fmt.Println("")
@@ -910,19 +848,15 @@ func cmdMCP(args []string) {
 	// When --dir is specified, use local .factory/mcp.json for project-local config
 	// Otherwise use global config location
 	var configPath string
-	if *configFlag != "" {
+	switch {
+	case *configFlag != "":
 		configPath, err = filepath.Abs(*configFlag)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: invalid config path: %v\n", err)
 			os.Exit(1)
 		}
-	} else if *dirFlag != "" && tool == "droid" {
-		// Local project config - Droid discovers .factory/mcp.json in working directory
-		configPath = filepath.Join(oublietteDir, ".factory", "mcp.json")
-	} else {
+	default:
 		switch tool {
-		case "droid":
-			configPath = filepath.Join(homeDir, ".factory", "mcp.json")
 		case "claude":
 			if runtime.GOOS == "darwin" {
 				configPath = filepath.Join(homeDir, "Library", "Application Support", "Claude", "claude_desktop_config.json")
@@ -933,7 +867,7 @@ func cmdMCP(args []string) {
 			configPath = filepath.Join(homeDir, ".config", "Code", "User", "globalStorage", "anthropic.claude-code", "settings.json")
 		default:
 			fmt.Fprintf(os.Stderr, "Unknown tool: %s\n", tool)
-			fmt.Println("Supported tools: droid, claude, claude-code")
+			fmt.Println("Supported tools: claude, claude-code")
 			os.Exit(1)
 		}
 	}
@@ -1058,8 +992,6 @@ func cmdMCP(args []string) {
 	fmt.Println("Next steps:")
 	fmt.Printf("  1. Start the Oubliette server: %s\n", binaryPath)
 	switch tool {
-	case "droid":
-		fmt.Println("  2. Restart Factory Droid to pick up the new MCP server.")
 	case "claude":
 		fmt.Println("  2. Restart Claude Desktop to pick up the new MCP server.")
 	case "claude-code":

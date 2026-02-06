@@ -14,21 +14,15 @@ func TestLoadUnifiedConfig(t *testing.T) {
 		configJSON := `{
 			// Test config
 			"server": {
-				"address": ":9000",
-				"agent_runtime": "droid",
-				"droid": {"default_model": "opus"}
+				"address": ":9000"
 			},
 			"credentials": {
-				"factory": {
-					"credentials": {"default": {"api_key": "test-key", "description": "test"}},
-					"default": "default"
-				},
 				"github": {"credentials": {}, "default": ""},
 				"providers": {"credentials": {}, "default": ""}
 			},
 			"defaults": {
 				"limits": {"max_recursion_depth": 5, "max_agents_per_session": 100, "max_cost_usd": 50.00},
-				"agent": {"runtime": "droid", "model": "sonnet", "autonomy": "off", "reasoning": "medium"},
+				"agent": {"model": "sonnet", "autonomy": "off", "reasoning": "medium"},
 				"container": {"type": "osint"},
 				"backup": {"enabled": false, "directory": "backups", "retention": 14, "interval_hours": 12}
 			},
@@ -48,9 +42,7 @@ func TestLoadUnifiedConfig(t *testing.T) {
 		if cfg.Server.Address != ":9000" {
 			t.Errorf("Server.Address = %q, want %q", cfg.Server.Address, ":9000")
 		}
-		if cfg.Server.Droid.DefaultModel != "opus" {
-			t.Errorf("Server.Droid.DefaultModel = %q, want %q", cfg.Server.Droid.DefaultModel, "opus")
-		}
+
 		if cfg.Defaults.Limits.MaxRecursionDepth != 5 {
 			t.Errorf("Defaults.Limits.MaxRecursionDepth = %d, want %d", cfg.Defaults.Limits.MaxRecursionDepth, 5)
 		}
@@ -164,14 +156,14 @@ func TestLoadAll(t *testing.T) {
 		configJSON := `{
 			"server": {"address": ":7000"},
 			"credentials": {
-				"factory": {
-					"credentials": {"default": {"api_key": "test-key"}},
+				"providers": {
+					"credentials": {"default": {"api_key": "test-key", "provider": "anthropic"}},
 					"default": "default"
 				}
 			},
 			"defaults": {
 				"limits": {"max_recursion_depth": 10, "max_agents_per_session": 100, "max_cost_usd": 25.0},
-				"agent": {"runtime": "opencode", "model": "gpt-5.1", "autonomy": "high", "reasoning": "low"},
+				"agent": {"model": "gpt-5.1", "autonomy": "high", "reasoning": "low"},
 				"container": {"type": "osint"}
 			},
 			"models": {
@@ -187,15 +179,12 @@ func TestLoadAll(t *testing.T) {
 		if cfg.Server.Address != ":7000" {
 			t.Errorf("Server.Address = %q, want %q", cfg.Server.Address, ":7000")
 		}
-		factoryKey, ok := cfg.Credentials.GetDefaultFactoryKey()
-		if !ok || factoryKey != "test-key" {
-			t.Errorf("Credentials.GetDefaultFactoryKey() = %q, want %q", factoryKey, "test-key")
+		provCred, ok := cfg.Credentials.GetDefaultProviderCredential()
+		if !ok || provCred.APIKey != "test-key" {
+			t.Errorf("Credentials.GetDefaultProviderCredential() key = %q, want %q", provCred.APIKey, "test-key")
 		}
 		if cfg.ConfigDefaults.Limits.MaxRecursionDepth != 10 {
 			t.Errorf("ConfigDefaults.Limits.MaxRecursionDepth = %d, want %d", cfg.ConfigDefaults.Limits.MaxRecursionDepth, 10)
-		}
-		if cfg.ConfigDefaults.Agent.Runtime != "opencode" {
-			t.Errorf("ConfigDefaults.Agent.Runtime = %q, want %q", cfg.ConfigDefaults.Agent.Runtime, "opencode")
 		}
 		// Check legacy ProjectDefaults populated from ConfigDefaults
 		if cfg.ProjectDefaults.MaxRecursionDepth != 10 {
@@ -226,9 +215,9 @@ func TestLoadedConfig_Validate(t *testing.T) {
 	t.Run("config with credentials is valid", func(t *testing.T) {
 		cfg := &LoadedConfig{
 			Credentials: &CredentialRegistry{
-				Factory: FactoryCredentials{
-					Credentials: map[string]FactoryCredential{
-						"default": {APIKey: "test-key"},
+				Providers: ProviderCredentials{
+					Credentials: map[string]ProviderCredential{
+						"default": {APIKey: "test-key", Provider: "anthropic"},
 					},
 					Default: "default",
 				},

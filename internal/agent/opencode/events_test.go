@@ -6,31 +6,19 @@ import (
 	"github.com/HyphaGroup/oubliette/internal/agent"
 )
 
-func TestParseSSEEvent_MessageUpdated(t *testing.T) {
-	// OpenCode SSE format nests data under "properties"
+func TestParseSSEEvent_MessageUpdated_Dropped(t *testing.T) {
 	data := `{"type":"message.updated","properties":{"info":{"sessionID":"ses_123","id":"msg_456","role":"assistant"}}}`
 
 	event, err := parseSSEEvent(data)
 	if err != nil {
 		t.Fatalf("parseSSEEvent() returned error: %v", err)
 	}
-
-	if event.Type != agent.StreamEventMessage {
-		t.Errorf("Type = %q, want %q", event.Type, agent.StreamEventMessage)
-	}
-	if event.SessionID != "ses_123" {
-		t.Errorf("SessionID = %q, want 'ses_123'", event.SessionID)
-	}
-	if event.ID != "msg_456" {
-		t.Errorf("ID = %q, want 'msg_456'", event.ID)
-	}
-	if event.Role != "assistant" {
-		t.Errorf("Role = %q, want 'assistant'", event.Role)
+	if event != nil {
+		t.Errorf("message.updated should be dropped (nil), got type=%q", event.Type)
 	}
 }
 
-func TestParseSSEEvent_TextPartUpdated(t *testing.T) {
-	// OpenCode SSE format nests data under "properties"
+func TestParseSSEEvent_TextDelta(t *testing.T) {
 	data := `{"type":"message.part.updated","properties":{"part":{"type":"text","text":"Hello world"},"delta":"Hello"}}`
 
 	event, err := parseSSEEvent(data)
@@ -38,17 +26,31 @@ func TestParseSSEEvent_TextPartUpdated(t *testing.T) {
 		t.Fatalf("parseSSEEvent() returned error: %v", err)
 	}
 
-	if event.Type != agent.StreamEventMessage {
-		t.Errorf("Type = %q, want %q", event.Type, agent.StreamEventMessage)
+	if event.Type != agent.StreamEventDelta {
+		t.Errorf("Type = %q, want %q", event.Type, agent.StreamEventDelta)
 	}
-	// Should use delta when available
 	if event.Text != "Hello" {
 		t.Errorf("Text = %q, want 'Hello'", event.Text)
 	}
 }
 
+func TestParseSSEEvent_TextConsolidated(t *testing.T) {
+	data := `{"type":"message.part.updated","properties":{"part":{"type":"text","text":"Hello world"}}}`
+
+	event, err := parseSSEEvent(data)
+	if err != nil {
+		t.Fatalf("parseSSEEvent() returned error: %v", err)
+	}
+
+	if event.Type != agent.StreamEventMessage {
+		t.Errorf("Type = %q, want %q", event.Type, agent.StreamEventMessage)
+	}
+	if event.Text != "Hello world" {
+		t.Errorf("Text = %q, want 'Hello world'", event.Text)
+	}
+}
+
 func TestParseSSEEvent_ToolInvocation(t *testing.T) {
-	// OpenCode SSE format nests data under "properties"
 	data := `{"type":"message.part.updated","properties":{"part":{"type":"tool-invocation","id":"tool_123","toolName":"read","args":{"path":"/test"}}}}`
 
 	event, err := parseSSEEvent(data)
@@ -68,7 +70,6 @@ func TestParseSSEEvent_ToolInvocation(t *testing.T) {
 }
 
 func TestParseSSEEvent_ToolResult(t *testing.T) {
-	// OpenCode SSE format nests data under "properties"
 	data := `{"type":"message.part.updated","properties":{"part":{"type":"tool-result","id":"tool_123","result":"file contents","isError":false}}}`
 
 	event, err := parseSSEEvent(data)
@@ -90,8 +91,8 @@ func TestParseSSEEvent_ToolResult(t *testing.T) {
 	}
 }
 
-func TestParseSSEEvent_SessionIdle(t *testing.T) {
-	data := `{"type":"session.idle"}`
+func TestParseSSEEvent_SessionStatusIdle(t *testing.T) {
+	data := `{"type":"session.status","properties":{"status":{"type":"idle"}}}`
 
 	event, err := parseSSEEvent(data)
 	if err != nil {
@@ -103,19 +104,39 @@ func TestParseSSEEvent_SessionIdle(t *testing.T) {
 	}
 }
 
-func TestParseSSEEvent_ServerConnected(t *testing.T) {
+func TestParseSSEEvent_SessionIdle_Dropped(t *testing.T) {
+	data := `{"type":"session.idle"}`
+
+	event, err := parseSSEEvent(data)
+	if err != nil {
+		t.Fatalf("parseSSEEvent() returned error: %v", err)
+	}
+	if event != nil {
+		t.Errorf("session.idle should be dropped (nil), got type=%q", event.Type)
+	}
+}
+
+func TestParseSSEEvent_ServerConnected_Dropped(t *testing.T) {
 	data := `{"type":"server.connected","properties":{}}`
 
 	event, err := parseSSEEvent(data)
 	if err != nil {
 		t.Fatalf("parseSSEEvent() returned error: %v", err)
 	}
-
-	if event.Type != agent.StreamEventSystem {
-		t.Errorf("Type = %q, want %q", event.Type, agent.StreamEventSystem)
+	if event != nil {
+		t.Errorf("server.connected should be dropped (nil), got type=%q", event.Type)
 	}
-	if event.Subtype != "server.connected" {
-		t.Errorf("Subtype = %q, want 'server.connected'", event.Subtype)
+}
+
+func TestParseSSEEvent_ServerHeartbeat_Dropped(t *testing.T) {
+	data := `{"type":"server.heartbeat","properties":{}}`
+
+	event, err := parseSSEEvent(data)
+	if err != nil {
+		t.Fatalf("parseSSEEvent() returned error: %v", err)
+	}
+	if event != nil {
+		t.Errorf("server.heartbeat should be dropped (nil), got type=%q", event.Type)
 	}
 }
 
@@ -128,8 +149,23 @@ func TestParseSSEEvent_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestParseSSEEvent_StepStart(t *testing.T) {
+	data := `{"type":"message.part.updated","properties":{"part":{"type":"step-start"}}}`
+
+	event, err := parseSSEEvent(data)
+	if err != nil {
+		t.Fatalf("parseSSEEvent() returned error: %v", err)
+	}
+
+	if event.Type != agent.StreamEventSystem {
+		t.Errorf("Type = %q, want %q", event.Type, agent.StreamEventSystem)
+	}
+	if event.Subtype != "step-start" {
+		t.Errorf("Subtype = %q, want 'step-start'", event.Subtype)
+	}
+}
+
 func TestEventTypeConstants(t *testing.T) {
-	// Verify constants match expected values
 	tests := []struct {
 		name     string
 		constant string

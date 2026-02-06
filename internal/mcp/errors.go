@@ -9,7 +9,6 @@ import (
 
 // sensitivePatterns contains substrings that indicate sensitive error details
 var sensitivePatterns = []string{
-	"FACTORY_API_KEY",
 	"API_KEY",
 	"api_key",
 	"token",
