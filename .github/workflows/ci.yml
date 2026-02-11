@@ -67,4 +67,4 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build base Docker image
-        run: docker build -f internal/container/Dockerfile -t oubliette:test .
+        run: docker build -f containers/base/Dockerfile -t oubliette:test .
