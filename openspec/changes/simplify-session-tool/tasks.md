@@ -22,9 +22,18 @@
 - [ ] 2.2 Update `SessionParams` unified struct to match
 - [ ] 2.3 Update `handlers_session_unified.go` mapping functions
 
-## 3. Update Tool Description
-- [ ] 3.1 Replace session tool description in `tools_registry.go` with rich action-level guidance
-- [ ] 3.2 Add per-action parameter hints in the JSON schema description fields
+## 3. Add Rich Tool Descriptions (ALL tools)
+- [ ] 3.1 `session` — actions, key behaviors (auto-resume, model defaults), per-action param guidance
+- [ ] 3.2 `project` — actions (create/list/get/delete/options), key params (repo_url, container_type, model)
+- [ ] 3.3 `container` — actions (start/stop/logs/exec), when to use each
+- [ ] 3.4 `container_refresh` — what it does, when it fails (active sessions)
+- [ ] 3.5 `workspace` — actions (list/delete), what workspaces are
+- [ ] 3.6 `token` — actions (create/list/revoke), scope formats
+- [ ] 3.7 `schedule` — actions (create/list/get/update/delete/trigger), cron format, session pinning
+- [ ] 3.8 `config_limits` — what recursion limits are, when to check
+- [ ] 3.9 `caller_tool_response` — how tool relay works, when this is needed
+- [ ] 3.10 `project_changes` — what OpenSpec changes are, output format
+- [ ] 3.11 `project_tasks` — what OpenSpec tasks are, output format
 
 ## 4. Clean Up Stale Comments
 - [ ] 4.1 Remove `.factory/` path comments from `handlers_session.go`
