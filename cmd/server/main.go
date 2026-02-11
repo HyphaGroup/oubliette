@@ -1006,13 +1006,8 @@ func cmdToken(args []string) {
 		os.Exit(1)
 	}
 
-	// Data directory is always ~/.oubliette/data
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting home directory: %v\n", err)
-		os.Exit(1)
-	}
-	dataDir := filepath.Join(homeDir, ".oubliette", "data")
+	oublietteDir := resolveOublietteDir("")
+	dataDir := filepath.Join(oublietteDir, "data")
 
 	// Initialize auth store
 	store, err := auth.NewStore(dataDir)
