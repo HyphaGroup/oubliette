@@ -24,8 +24,8 @@ func TestAuthContext_CanAccessProject(t *testing.T) {
 			want:      true,
 		},
 		{
-			name:      "read-only scope can access any project",
-			authCtx:   &AuthContext{Type: AuthTypeToken, Token: &Token{Scope: ScopeReadOnly}},
+			name:      "admin:ro scope can access any project",
+			authCtx:   &AuthContext{Type: AuthTypeToken, Token: &Token{Scope: ScopeAdminRO}},
 			projectID: "proj-1",
 			want:      true,
 		},
@@ -75,8 +75,8 @@ func TestAuthContext_CanWrite(t *testing.T) {
 			want:    true,
 		},
 		{
-			name:    "read-only scope cannot write",
-			authCtx: &AuthContext{Type: AuthTypeToken, Token: &Token{Scope: ScopeReadOnly}},
+			name:    "admin:ro scope cannot write",
+			authCtx: &AuthContext{Type: AuthTypeToken, Token: &Token{Scope: ScopeAdminRO}},
 			want:    false,
 		},
 		{
@@ -112,8 +112,8 @@ func TestAuthContext_IsAdmin(t *testing.T) {
 			want:    true,
 		},
 		{
-			name:    "read-only scope is not admin",
-			authCtx: &AuthContext{Type: AuthTypeToken, Token: &Token{Scope: ScopeReadOnly}},
+			name:    "admin:ro scope is not admin",
+			authCtx: &AuthContext{Type: AuthTypeToken, Token: &Token{Scope: ScopeAdminRO}},
 			want:    false,
 		},
 		{
@@ -153,7 +153,6 @@ func TestIsAdminScope(t *testing.T) {
 	}{
 		{ScopeAdmin, true},
 		{ScopeAdminRO, true},
-		{ScopeReadOnly, true}, // legacy
 		{"project:abc", false},
 		{"project:abc:ro", false},
 		{"invalid", false},
@@ -191,7 +190,6 @@ func TestIsReadOnlyScope(t *testing.T) {
 	}{
 		{ScopeAdmin, false},
 		{ScopeAdminRO, true},
-		{ScopeReadOnly, true}, // legacy
 		{"project:abc", false},
 		{"project:abc:ro", true},
 		{"invalid", false},

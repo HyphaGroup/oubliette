@@ -1,8 +1,8 @@
 // oubliette-relay runs inside containers and pairs upstream (Oubliette) connections
-// with downstream (droid) connections, then pipes bytes between them.
+// with downstream (agent) connections, then pipes bytes between them.
 //
 // Protocol:
-// - Downstream (droid): "OUBLIETTE-DOWNSTREAM {project_id}\n"
+// - Downstream (agent): "OUBLIETTE-DOWNSTREAM {project_id}\n"
 // - Upstream (Oubliette): "OUBLIETTE-UPSTREAM {session_id} {project_id} {depth}\n"
 //
 // Relay pairs connections FIFO (first downstream with first upstream).
@@ -70,7 +70,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Set permissions so droid user can connect
+	// Set permissions so agent user can connect
 	if err := os.Chmod(socketPath, 0o666); err != nil {
 		_ = listener.Close()
 		fmt.Fprintf(os.Stderr, "failed to chmod socket: %v\n", err)

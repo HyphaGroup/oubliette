@@ -1,6 +1,8 @@
 package session
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -220,7 +222,7 @@ func TestSessionIndex_SaveAndLoad(t *testing.T) {
 
 	// Verify file exists
 	indexPath := filepath.Join(dir, "sessions_index.json")
-	if _, err := os.Stat(indexPath); os.IsNotExist(err) {
+	if _, err := os.Stat(indexPath); errors.Is(err, fs.ErrNotExist) {
 		t.Fatal("Index file not created")
 	}
 

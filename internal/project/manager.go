@@ -2,8 +2,10 @@ package project
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -273,7 +275,7 @@ func (m *Manager) Get(projectID string) (*Project, error) {
 
 	data, err := os.ReadFile(metadataPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, fmt.Errorf("project %s not found", projectID)
 		}
 		return nil, fmt.Errorf("failed to read project metadata: %w", err)
@@ -298,7 +300,7 @@ func (m *Manager) Get(projectID string) (*Project, error) {
 func (m *Manager) List(filter *ListProjectsFilter) ([]*Project, error) {
 	entries, err := os.ReadDir(m.projectsDir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return []*Project{}, nil
 		}
 		return nil, fmt.Errorf("failed to read projects directory: %w", err)
@@ -357,7 +359,7 @@ func (m *Manager) Delete(projectID string) error {
 
 	projectDir := filepath.Join(m.projectsDir, projectID)
 
-	if _, err := os.Stat(projectDir); os.IsNotExist(err) {
+	if _, err := os.Stat(projectDir); errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("project %s not found", projectID)
 	}
 
@@ -422,7 +424,7 @@ func (m *Manager) CreateWorkspace(projectID, workspaceID, externalID, source str
 		workspaceAgentsFile := filepath.Join(workspaceDir, "AGENTS.md")
 		// Only copy if project has AGENTS.md and workspace doesn't already have one
 		if _, err := os.Stat(projectAgentsFile); err == nil {
-			if _, err := os.Stat(workspaceAgentsFile); os.IsNotExist(err) {
+			if _, err := os.Stat(workspaceAgentsFile); errors.Is(err, fs.ErrNotExist) {
 				if err := m.copyFile(projectAgentsFile, workspaceAgentsFile); err != nil {
 					// Log but don't fail - AGENTS.md is optional
 					fmt.Printf("Warning: failed to copy AGENTS.md to workspace: %v\n", err)
@@ -469,7 +471,7 @@ func (m *Manager) GetWorkspaceMetadata(projectID, workspaceID string) (*Workspac
 
 	data, err := os.ReadFile(metadataPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, fmt.Errorf("workspace %s not found", workspaceID)
 		}
 		return nil, fmt.Errorf("failed to read workspace metadata: %w", err)
@@ -527,7 +529,7 @@ func (m *Manager) ListWorkspaces(projectID string) ([]*WorkspaceMetadata, error)
 	workspacesDir := filepath.Join(m.projectsDir, projectID, "workspaces")
 	entries, err := os.ReadDir(workspacesDir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return []*WorkspaceMetadata{}, nil
 		}
 		return nil, fmt.Errorf("failed to read workspaces directory: %w", err)
@@ -573,7 +575,7 @@ func (m *Manager) DeleteWorkspace(projectID, workspaceID string) error {
 	}
 
 	workspacePath := m.GetWorkspacePath(projectID, workspaceID)
-	if _, err := os.Stat(workspacePath); os.IsNotExist(err) {
+	if _, err := os.Stat(workspacePath); errors.Is(err, fs.ErrNotExist) {
 		// Idempotent - already deleted
 		return nil
 	}

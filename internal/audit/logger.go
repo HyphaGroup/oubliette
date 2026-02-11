@@ -12,18 +12,10 @@ import (
 type Operation string
 
 const (
-	OpProjectCreate   Operation = "project.create"
-	OpProjectDelete   Operation = "project.delete"
-	OpSessionCreate   Operation = "session.create"
-	OpSessionEnd      Operation = "session.end"
-	OpSessionMessage  Operation = "session.message"
-	OpWorkspaceCreate Operation = "workspace.create"
-	OpWorkspaceDelete Operation = "workspace.delete"
-	OpTokenCreate     Operation = "token.create"
-	OpTokenRevoke     Operation = "token.revoke"
-	OpContainerStart  Operation = "container.start"
-	OpContainerStop   Operation = "container.stop"
-	OpImageRebuild    Operation = "image.rebuild"
+	OpProjectCreate Operation = "project.create"
+	OpProjectDelete Operation = "project.delete"
+	OpTokenCreate   Operation = "token.create"
+	OpTokenRevoke   Operation = "token.revoke"
 )
 
 // Event represents an audit log entry

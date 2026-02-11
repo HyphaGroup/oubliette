@@ -39,14 +39,6 @@ var (
 		[]string{"project_id"},
 	)
 
-	// ContainersRunning tracks running containers
-	ContainersRunning = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "oubliette_containers_running",
-			Help: "Number of running containers",
-		},
-	)
-
 	// SessionDuration tracks how long sessions run
 	SessionDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -55,32 +47,6 @@ var (
 			Buckets: []float64{1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600},
 		},
 		[]string{"project_id", "status"},
-	)
-
-	// EventBufferDrops tracks dropped events due to buffer overflow
-	EventBufferDrops = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "oubliette_event_buffer_drops_total",
-			Help: "Total number of events dropped due to buffer overflow",
-		},
-		[]string{"session_id"},
-	)
-
-	// ProjectsTotal tracks total number of projects
-	ProjectsTotal = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "oubliette_projects_total",
-			Help: "Total number of projects",
-		},
-	)
-
-	// ToolCalls tracks MCP tool invocations
-	ToolCalls = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "oubliette_tool_calls_total",
-			Help: "Total number of MCP tool calls",
-		},
-		[]string{"tool", "status"},
 	)
 )
 
@@ -145,24 +111,4 @@ func RecordSessionStart(projectID string) {
 func RecordSessionEnd(projectID, status string, durationSeconds float64) {
 	ActiveSessions.WithLabelValues(projectID).Dec()
 	SessionDuration.WithLabelValues(projectID, status).Observe(durationSeconds)
-}
-
-// RecordToolCall records an MCP tool invocation
-func RecordToolCall(tool, status string) {
-	ToolCalls.WithLabelValues(tool, status).Inc()
-}
-
-// SetContainersRunning sets the running container count
-func SetContainersRunning(count float64) {
-	ContainersRunning.Set(count)
-}
-
-// SetProjectsTotal sets the total project count
-func SetProjectsTotal(count float64) {
-	ProjectsTotal.Set(count)
-}
-
-// RecordEventDrop records an event buffer drop
-func RecordEventDrop(sessionID string) {
-	EventBufferDrops.WithLabelValues(sessionID).Inc()
 }

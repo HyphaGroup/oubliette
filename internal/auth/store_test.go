@@ -93,7 +93,7 @@ func TestStore_ListTokens(t *testing.T) {
 
 	// Create multiple tokens
 	_, _, _ = store.CreateToken("token1", ScopeAdmin, nil)
-	_, _, _ = store.CreateToken("token2", ScopeReadOnly, nil)
+	_, _, _ = store.CreateToken("token2", ScopeAdminRO, nil)
 
 	tokens, err := store.ListTokens()
 	if err != nil {

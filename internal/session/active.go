@@ -26,9 +26,7 @@ const (
 
 // TaskContext tracks what OpenSpec change/task a session is working on
 type TaskContext struct {
-	ChangeID string `json:"change_id,omitempty"` // The OpenSpec change being built
-	Mode     string `json:"mode,omitempty"`      // "plan", "build", or "interactive"
-	BuildAll bool   `json:"build_all,omitempty"` // Whether building all changes
+	ChangeID string `json:"change_id,omitempty"`
 }
 
 // CallerToolDefinition defines a tool that can be called on the external caller

@@ -13,18 +13,6 @@ const (
 	StatusFailed    Status = "failed"
 )
 
-// SessionMode represents the mode of operation for a session message
-type SessionMode string
-
-const (
-	// ModeInteractive is the default mode - messages are sent as-is
-	ModeInteractive SessionMode = "interactive"
-	// ModePlan prepends /openspec-proposal to messages for planning
-	ModePlan SessionMode = "plan"
-	// ModeBuild prepends /openspec-apply <change_id> for implementation
-	ModeBuild SessionMode = "build"
-)
-
 // Session represents an AI agent session (gogol)
 type Session struct {
 	SessionID        string    `json:"session_id"`
@@ -108,7 +96,6 @@ type StartOptions struct {
 	Model          string // Model to use (e.g., claude-opus-4-5-20251101)
 	AutonomyLevel  string // low, medium, high, skip-permissions-unsafe
 	ReasoningLevel string // off, low, medium, high
-	UseSpec        bool   // Start in spec/planning mode
 	WorkspaceID    string // Workspace identifier (default, experiment-001, etc.)
 
 	ToolsAllowed       []string // Whitelist of allowed tools

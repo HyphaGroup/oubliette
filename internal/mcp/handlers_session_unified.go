@@ -29,16 +29,12 @@ type SessionParams struct {
 	ToolsAllowed       []string       `json:"tools_allowed,omitempty"`
 	ToolsDisallowed    []string       `json:"tools_disallowed,omitempty"`
 	AppendSystemPrompt string         `json:"append_system_prompt,omitempty"`
-	UseSpec            bool           `json:"use_spec,omitempty"`
 
 	// For message
 	Message     string                         `json:"message,omitempty"`
 	Attachments []Attachment                   `json:"attachments,omitempty"`
 	CallerTools []session.CallerToolDefinition `json:"caller_tools,omitempty"`
 	CallerID    string                         `json:"caller_id,omitempty"`
-	Mode        string                         `json:"mode,omitempty"`
-	ChangeID    string                         `json:"change_id,omitempty"`
-	BuildAll    bool                           `json:"build_all,omitempty"`
 
 	// For list
 	Status string `json:"status,omitempty"`
@@ -96,7 +92,6 @@ func (s *Server) sessionSpawn(ctx context.Context, request *mcp.CallToolRequest,
 		ToolsAllowed:       params.ToolsAllowed,
 		ToolsDisallowed:    params.ToolsDisallowed,
 		AppendSystemPrompt: params.AppendSystemPrompt,
-		UseSpec:            params.UseSpec,
 	})
 }
 
@@ -118,9 +113,6 @@ func (s *Server) sessionMessage(ctx context.Context, request *mcp.CallToolReques
 		CreateWorkspace:    params.CreateWorkspace,
 		ExternalID:         params.ExternalID,
 		Source:             params.Source,
-		Mode:               params.Mode,
-		ChangeID:           params.ChangeID,
-		BuildAll:           params.BuildAll,
 	})
 }
 

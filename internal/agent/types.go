@@ -81,7 +81,6 @@ type ExecuteRequest struct {
 
 	// Mode flags
 	StreamJSONRPC bool // Bidirectional streaming protocol
-	UseSpec       bool // Planning mode
 
 	// Context
 	SystemPrompt string

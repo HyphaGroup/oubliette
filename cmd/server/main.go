@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	iofs "io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -131,7 +133,7 @@ func runServer() {
 	configDir := filepath.Join(oublietteDir, "config")
 
 	// Check if initialized
-	if _, err := os.Stat(filepath.Join(configDir, "oubliette.jsonc")); os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(configDir, "oubliette.jsonc")); errors.Is(err, iofs.ErrNotExist) {
 		fmt.Fprintln(os.Stderr, "Oubliette not initialized. Run 'oubliette init' first.")
 		os.Exit(1)
 	}
@@ -845,8 +847,6 @@ func cmdMCP(args []string) {
 	}
 
 	// Determine config file path
-	// When --dir is specified, use local .factory/mcp.json for project-local config
-	// Otherwise use global config location
 	var configPath string
 	switch {
 	case *configFlag != "":
@@ -882,7 +882,7 @@ func cmdMCP(args []string) {
 
 	// Check if oubliette is initialized
 	configDir := filepath.Join(oublietteDir, "config")
-	if _, err := os.Stat(dataDir); os.IsNotExist(err) {
+	if _, err := os.Stat(dataDir); errors.Is(err, iofs.ErrNotExist) {
 		fmt.Fprintf(os.Stderr, "Error: Oubliette is not initialized.\n")
 		fmt.Fprintf(os.Stderr, "Run 'oubliette init' first.\n")
 		os.Exit(1)
@@ -1185,7 +1185,7 @@ func tokenInfo(store *auth.Store, args []string) {
 
 func isValidTokenScope(scope string) bool {
 	// Admin scopes
-	if scope == auth.ScopeAdmin || scope == auth.ScopeAdminRO || scope == auth.ScopeReadOnly {
+	if scope == auth.ScopeAdmin || scope == auth.ScopeAdminRO {
 		return true
 	}
 	// Project scopes: project:<uuid> or project:<uuid>:ro

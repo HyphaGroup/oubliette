@@ -2,6 +2,8 @@ package session
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -46,7 +48,7 @@ func (idx *SessionIndex) Load() error {
 
 	data, err := os.ReadFile(idx.filePath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			// No index file yet, start fresh
 			return nil
 		}

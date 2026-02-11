@@ -130,13 +130,13 @@ func TestIsToolAllowed(t *testing.T) {
 		{
 			name:       "read-only can access global read tool",
 			tool:       ToolDef{Name: "project_list", Target: TargetGlobal, Access: AccessRead},
-			tokenScope: auth.ScopeReadOnly,
+			tokenScope: auth.ScopeAdminRO,
 			want:       true,
 		},
 		{
 			name:       "read-only cannot access global write tool",
 			tool:       ToolDef{Name: "project_create", Target: TargetGlobal, Access: AccessWrite},
-			tokenScope: auth.ScopeReadOnly,
+			tokenScope: auth.ScopeAdminRO,
 			want:       false,
 		},
 
@@ -153,50 +153,6 @@ func TestIsToolAllowed(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := IsToolAllowed(&tt.tool, tt.tokenScope, tt.projectID)
-			if got != tt.want {
-				t.Errorf("IsToolAllowed() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestIsToolAllowed_LegacyScope(t *testing.T) {
-	// Test fallback to legacy Scope field when Target/Access not set
-	tests := []struct {
-		name       string
-		tool       ToolDef
-		tokenScope string
-		want       bool
-	}{
-		{
-			name:       "legacy admin scope with admin token",
-			tool:       ToolDef{Name: "token_create", Scope: toolScopeAdmin},
-			tokenScope: auth.ScopeAdmin,
-			want:       true,
-		},
-		{
-			name:       "legacy admin scope with read-only token",
-			tool:       ToolDef{Name: "token_create", Scope: toolScopeAdmin},
-			tokenScope: auth.ScopeReadOnly,
-			want:       false,
-		},
-		{
-			name:       "legacy write scope with admin token",
-			tool:       ToolDef{Name: "project_create", Scope: toolScopeWrite},
-			tokenScope: auth.ScopeAdmin,
-			want:       true,
-		},
-		{
-			name:       "legacy read scope with read-only token",
-			tool:       ToolDef{Name: "project_list", Scope: toolScopeRead},
-			tokenScope: auth.ScopeReadOnly,
-			want:       true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := IsToolAllowed(&tt.tool, tt.tokenScope, "")
 			if got != tt.want {
 				t.Errorf("IsToolAllowed() = %v, want %v", got, tt.want)
 			}

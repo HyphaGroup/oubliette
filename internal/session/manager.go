@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -139,7 +141,6 @@ func (m *Manager) Create(ctx context.Context, projectID, containerID, prompt str
 		EnabledTools:  opts.ToolsAllowed,
 		DisabledTools: opts.ToolsDisallowed,
 		SystemPrompt:  opts.AppendSystemPrompt,
-		UseSpec:       opts.UseSpec,
 	}
 
 	// Determine which runtime to use (override or manager's default)
@@ -295,7 +296,7 @@ func (m *Manager) List(projectID string, statusFilter *Status) ([]*SessionSummar
 
 	entries, err := os.ReadDir(sessionsDir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return []*SessionSummary{}, nil
 		}
 		return nil, fmt.Errorf("failed to read sessions directory: %w", err)
@@ -519,7 +520,7 @@ func (m *Manager) RecoverStaleSessions(maxAge time.Duration) (recovered int, err
 	// Fall back to filesystem scan if index is empty (first run or corruption)
 	entries, err := os.ReadDir(m.sessionsBaseDir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return 0, nil
 		}
 		return 0, fmt.Errorf("failed to read sessions base directory: %w", err)
@@ -579,7 +580,7 @@ func (m *Manager) CleanupOldSessions(projectID string, maxAge time.Duration) (in
 	sessionsDir := filepath.Join(m.sessionsBaseDir, projectID, "sessions")
 	entries, err := os.ReadDir(sessionsDir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return 0, nil
 		}
 		return 0, fmt.Errorf("failed to read sessions directory: %w", err)
@@ -631,7 +632,7 @@ func (m *Manager) CleanupAllOldSessions(maxAge time.Duration) (map[string]int, e
 
 	entries, err := os.ReadDir(m.sessionsBaseDir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return results, nil
 		}
 		return nil, fmt.Errorf("failed to read projects directory: %w", err)

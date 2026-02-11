@@ -1,6 +1,8 @@
 package schedule
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -389,7 +391,7 @@ func TestStore_DatabaseFile(t *testing.T) {
 
 	// Verify file exists
 	dbPath := filepath.Join(dir, "schedules.db")
-	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+	if _, err := os.Stat(dbPath); errors.Is(err, fs.ErrNotExist) {
 		t.Error("Database file should be created")
 	}
 }

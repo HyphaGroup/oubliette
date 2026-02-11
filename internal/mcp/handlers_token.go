@@ -139,7 +139,7 @@ func (s *Server) handleTokenRevoke(ctx context.Context, request *mcp.CallToolReq
 // Helper functions for token handlers
 
 func isValidScope(scope string) bool {
-	if scope == auth.ScopeAdmin || scope == auth.ScopeReadOnly {
+	if scope == auth.ScopeAdmin || scope == auth.ScopeAdminRO {
 		return true
 	}
 	if len(scope) > 8 && scope[:8] == "project:" {

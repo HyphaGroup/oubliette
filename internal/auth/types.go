@@ -17,9 +17,8 @@ type Token struct {
 
 // Scope constants
 const (
-	ScopeAdmin    = "admin"
-	ScopeAdminRO  = "admin:ro"
-	ScopeReadOnly = "read-only" // Deprecated: use ScopeAdminRO
+	ScopeAdmin   = "admin"
+	ScopeAdminRO = "admin:ro"
 )
 
 // ScopeProject returns a project-scoped scope string
@@ -34,7 +33,7 @@ func ScopeProjectRO(projectID string) string {
 
 // IsAdminScope returns true if scope is admin or admin:ro
 func IsAdminScope(scope string) bool {
-	return scope == ScopeAdmin || scope == ScopeAdminRO || scope == ScopeReadOnly
+	return scope == ScopeAdmin || scope == ScopeAdminRO
 }
 
 // IsProjectScope returns true if scope is project:<uuid> or project:<uuid>:ro
@@ -44,7 +43,7 @@ func IsProjectScope(scope string) bool {
 
 // IsReadOnlyScope returns true if scope is read-only (admin:ro, project:*:ro, or legacy read-only)
 func IsReadOnlyScope(scope string) bool {
-	return scope == ScopeAdminRO || scope == ScopeReadOnly || strings.HasSuffix(scope, ":ro")
+	return scope == ScopeAdminRO || strings.HasSuffix(scope, ":ro")
 }
 
 // ExtractProjectID extracts project ID from a project scope, returns empty if not a project scope

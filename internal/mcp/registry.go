@@ -34,7 +34,6 @@ func CallToolRequestFromContext(ctx context.Context) *mcp_sdk.CallToolRequest {
 type ToolDef struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
-	Scope       string         `json:"scope,omitempty"` // Legacy: "admin", "write", "read"
 	Target      ToolTarget     `json:"target,omitempty"`
 	Access      ToolAccess     `json:"access,omitempty"`
 	InputSchema map[string]any `json:"inputSchema,omitempty"`
@@ -112,25 +111,6 @@ func (r *Registry) GetToolsForScope(tokenScope string) []*ToolDef {
 		}
 	}
 	return tools
-}
-
-// isToolAllowedForTokenScope checks if a tool's required scope is satisfied by the token scope
-func isToolAllowedForTokenScope(toolScope, tokenScope string) bool {
-	// Admin tokens can access everything
-	if tokenScope == auth.ScopeAdmin {
-		return true
-	}
-
-	switch toolScope {
-	case toolScopeAdmin:
-		return tokenScope == auth.ScopeAdmin
-	case toolScopeWrite:
-		return tokenScope != auth.ScopeReadOnly
-	case toolScopeRead:
-		return true
-	default:
-		return false
-	}
 }
 
 // IsToolAllowed checks if a specific tool name is allowed for a token scope

@@ -23,7 +23,7 @@ func TestLoadUnifiedConfig(t *testing.T) {
 			"defaults": {
 				"limits": {"max_recursion_depth": 5, "max_agents_per_session": 100, "max_cost_usd": 50.00},
 				"agent": {"model": "sonnet", "autonomy": "off", "reasoning": "medium"},
-				"container": {"type": "osint"},
+				"container": {"type": "dev"},
 				"backup": {"enabled": false, "directory": "backups", "retention": 14, "interval_hours": 12}
 			},
 			"models": {
@@ -46,8 +46,8 @@ func TestLoadUnifiedConfig(t *testing.T) {
 		if cfg.Defaults.Limits.MaxRecursionDepth != 5 {
 			t.Errorf("Defaults.Limits.MaxRecursionDepth = %d, want %d", cfg.Defaults.Limits.MaxRecursionDepth, 5)
 		}
-		if cfg.Defaults.Container.Type != "osint" {
-			t.Errorf("Defaults.Container.Type = %q, want %q", cfg.Defaults.Container.Type, "osint")
+		if cfg.Defaults.Container.Type != "dev" {
+			t.Errorf("Defaults.Container.Type = %q, want %q", cfg.Defaults.Container.Type, "dev")
 		}
 		if len(cfg.Models.Models) != 1 {
 			t.Errorf("len(Models.Models) = %d, want 1", len(cfg.Models.Models))
@@ -164,7 +164,7 @@ func TestLoadAll(t *testing.T) {
 			"defaults": {
 				"limits": {"max_recursion_depth": 10, "max_agents_per_session": 100, "max_cost_usd": 25.0},
 				"agent": {"model": "gpt-5.1", "autonomy": "high", "reasoning": "low"},
-				"container": {"type": "osint"}
+				"container": {"type": "dev"}
 			},
 			"models": {
 				"models": {"sonnet": {"model": "claude-sonnet-4-5", "provider": "anthropic"}}
@@ -190,8 +190,8 @@ func TestLoadAll(t *testing.T) {
 		if cfg.ProjectDefaults.MaxRecursionDepth != 10 {
 			t.Errorf("ProjectDefaults.MaxRecursionDepth = %d, want %d", cfg.ProjectDefaults.MaxRecursionDepth, 10)
 		}
-		if cfg.ProjectDefaults.ContainerType != "osint" {
-			t.Errorf("ProjectDefaults.ContainerType = %q, want %q", cfg.ProjectDefaults.ContainerType, "osint")
+		if cfg.ProjectDefaults.ContainerType != "dev" {
+			t.Errorf("ProjectDefaults.ContainerType = %q, want %q", cfg.ProjectDefaults.ContainerType, "dev")
 		}
 		// Check models loaded
 		if cfg.Models == nil || len(cfg.Models.Models) != 1 {

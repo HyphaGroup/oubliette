@@ -13,7 +13,7 @@ func TestIsValidScope(t *testing.T) {
 		want  bool
 	}{
 		{"admin scope", auth.ScopeAdmin, true},
-		{"read-only scope", auth.ScopeReadOnly, true},
+		{"admin:ro scope", auth.ScopeAdminRO, true},
 		{"project scope", "project:550e8400-e29b-41d4-a716-446655440000", true},
 		{"short project scope", "project:a", true}, // Just needs prefix
 		{"empty", "", false},

@@ -5,9 +5,10 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -100,7 +101,7 @@ func (m *Manager) Stop() {
 // BackupProject creates a backup of a single project.
 func (m *Manager) BackupProject(projectID string) (*Snapshot, error) {
 	projectPath := filepath.Join(m.projectsDir, projectID)
-	if _, err := os.Stat(projectPath); os.IsNotExist(err) {
+	if _, err := os.Stat(projectPath); errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("project not found: %s", projectID)
 	}
 
@@ -188,7 +189,7 @@ func (m *Manager) BackupAll() error {
 		return fmt.Errorf("failed to read projects directory: %w", err)
 	}
 
-	var errors []string
+	var errs []string
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -196,76 +197,19 @@ func (m *Manager) BackupAll() error {
 
 		// Check if it's a valid project (has metadata.json)
 		metaPath := filepath.Join(m.projectsDir, entry.Name(), "metadata.json")
-		if _, err := os.Stat(metaPath); os.IsNotExist(err) {
+		if _, err := os.Stat(metaPath); errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
 
 		if _, err := m.BackupProject(entry.Name()); err != nil {
-			errors = append(errors, fmt.Sprintf("%s: %v", entry.Name(), err))
+			errs = append(errs, fmt.Sprintf("%s: %v", entry.Name(), err))
 		}
 	}
 
-	if len(errors) > 0 {
-		return fmt.Errorf("backup errors: %s", strings.Join(errors, "; "))
+	if len(errs) > 0 {
+		return fmt.Errorf("backup errors: %s", strings.Join(errs, "; "))
 	}
 
-	return nil
-}
-
-// RestoreProject restores a project from backup.
-func (m *Manager) RestoreProject(filename string) error {
-	backupPath := filepath.Join(m.backupDir, filename)
-	if _, err := os.Stat(backupPath); os.IsNotExist(err) {
-		return fmt.Errorf("backup not found: %s", filename)
-	}
-
-	file, err := os.Open(backupPath)
-	if err != nil {
-		return fmt.Errorf("failed to open backup: %w", err)
-	}
-	defer func() { _ = file.Close() }()
-
-	gr, err := gzip.NewReader(file)
-	if err != nil {
-		return fmt.Errorf("failed to decompress backup: %w", err)
-	}
-	defer func() { _ = gr.Close() }()
-
-	tr := tar.NewReader(gr)
-
-	for {
-		header, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("failed to read backup: %w", err)
-		}
-
-		targetPath := filepath.Join(m.projectsDir, header.Name)
-
-		switch header.Typeflag {
-		case tar.TypeDir:
-			if err := os.MkdirAll(targetPath, 0o755); err != nil {
-				return fmt.Errorf("failed to create directory: %w", err)
-			}
-		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
-				return fmt.Errorf("failed to create parent directory: %w", err)
-			}
-			f, err := os.Create(targetPath)
-			if err != nil {
-				return fmt.Errorf("failed to create file: %w", err)
-			}
-			if _, err := io.Copy(f, tr); err != nil {
-				_ = f.Close()
-				return fmt.Errorf("failed to write file: %w", err)
-			}
-			_ = f.Close()
-		}
-	}
-
-	logger.Printf("📦 Restored from backup: %s", filename)
 	return nil
 }
 
@@ -339,24 +283,4 @@ func (m *Manager) enforceRetention(projectID string) {
 			logger.Printf("📦 Removed old backup: %s", snapshots[i].Filename)
 		}
 	}
-}
-
-// ExportManifest creates a JSON manifest of all snapshots.
-func (m *Manager) ExportManifest() ([]byte, error) {
-	snapshots, err := m.ListSnapshots("")
-	if err != nil {
-		return nil, err
-	}
-
-	manifest := struct {
-		ExportedAt time.Time  `json:"exported_at"`
-		BackupDir  string     `json:"backup_dir"`
-		Snapshots  []Snapshot `json:"snapshots"`
-	}{
-		ExportedAt: time.Now(),
-		BackupDir:  m.backupDir,
-		Snapshots:  snapshots,
-	}
-
-	return json.MarshalIndent(manifest, "", "  ")
 }

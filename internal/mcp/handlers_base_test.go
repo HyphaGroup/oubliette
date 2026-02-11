@@ -113,7 +113,7 @@ func TestRequireWriteAccess(t *testing.T) {
 			name: "read-only cannot write",
 			ctx: auth.WithContext(context.Background(), &auth.AuthContext{
 				Type:  auth.AuthTypeToken,
-				Token: &auth.Token{ID: "test", Scope: auth.ScopeReadOnly},
+				Token: &auth.Token{ID: "test", Scope: auth.ScopeAdminRO},
 			}),
 			wantErr: true,
 		},
@@ -160,7 +160,7 @@ func TestRequireAdmin(t *testing.T) {
 			name: "read-only scope fails",
 			ctx: auth.WithContext(context.Background(), &auth.AuthContext{
 				Type:  auth.AuthTypeToken,
-				Token: &auth.Token{ID: "test", Scope: auth.ScopeReadOnly},
+				Token: &auth.Token{ID: "test", Scope: auth.ScopeAdminRO},
 			}),
 			wantErr: true,
 		},

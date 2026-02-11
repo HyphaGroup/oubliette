@@ -2,6 +2,8 @@ package session
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -644,10 +646,10 @@ func TestCleanupOldSessions(t *testing.T) {
 		}
 
 		// Verify old completed sessions are gone
-		if _, err := os.Stat(filepath.Join(sessDir, "gogol_20250101_100000_old_done.json")); !os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Join(sessDir, "gogol_20250101_100000_old_done.json")); !errors.Is(err, fs.ErrNotExist) {
 			t.Error("expected old_done session file to be deleted")
 		}
-		if _, err := os.Stat(filepath.Join(sessDir, "gogol_20250101_110000_old_fail.json")); !os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Join(sessDir, "gogol_20250101_110000_old_fail.json")); !errors.Is(err, fs.ErrNotExist) {
 			t.Error("expected old_fail session file to be deleted")
 		}
 

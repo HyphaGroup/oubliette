@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -219,7 +218,6 @@ type SpawnParams struct {
 	Model          string `json:"model,omitempty"`
 	AutonomyLevel  string `json:"autonomy_level,omitempty"`
 	ReasoningLevel string `json:"reasoning_level,omitempty"`
-	UseSpec        bool   `json:"use_spec,omitempty"`
 
 	ToolsAllowed    []string `json:"tools_allowed,omitempty"`
 	ToolsDisallowed []string `json:"tools_disallowed,omitempty"`
@@ -263,10 +261,10 @@ func (s *Server) handleSpawnPrime(ctx context.Context, request *mcp.CallToolRequ
 	}
 
 	opts := session.StartOptions{
-		Model:              model,
-		AutonomyLevel:      params.AutonomyLevel,
-		ReasoningLevel:     params.ReasoningLevel,
-		UseSpec:            params.UseSpec,
+		Model:          model,
+		AutonomyLevel:  params.AutonomyLevel,
+		ReasoningLevel: params.ReasoningLevel,
+
 		WorkspaceID:        env.workspaceID,
 		ToolsAllowed:       params.ToolsAllowed,
 		ToolsDisallowed:    params.ToolsDisallowed,
@@ -430,10 +428,10 @@ The .rlm-context/ directory is shared with your parent and siblings for result a
 	}
 
 	opts := session.StartOptions{
-		Model:              model,
-		AutonomyLevel:      params.AutonomyLevel,
-		ReasoningLevel:     params.ReasoningLevel,
-		UseSpec:            params.UseSpec,
+		Model:          model,
+		AutonomyLevel:  params.AutonomyLevel,
+		ReasoningLevel: params.ReasoningLevel,
+
 		ToolsAllowed:       params.ToolsAllowed,
 		ToolsDisallowed:    params.ToolsDisallowed,
 		AppendSystemPrompt: systemPrompt,
@@ -620,11 +618,6 @@ type SendMessageParams struct {
 	Source          string                 `json:"source,omitempty"`
 	Context         map[string]interface{} `json:"context,omitempty"`
 
-	// OpenSpec session modes
-	Mode     string `json:"mode,omitempty"`      // "interactive" (default), "plan", or "build"
-	ChangeID string `json:"change_id,omitempty"` // For build mode: specific change to implement (omit for build_all)
-	BuildAll bool   `json:"build_all,omitempty"` // For build mode: if true, build all incomplete changes sequentially
-
 	Model              string   `json:"model,omitempty"`
 	AutonomyLevel      string   `json:"autonomy_level,omitempty"`
 	ReasoningLevel     string   `json:"reasoning_level,omitempty"`
@@ -657,103 +650,6 @@ type SendMessageResult struct {
 	LastEventIndex   int    `json:"last_event_index"`
 }
 
-// transformMessageForMode modifies the message based on the session mode
-// - interactive: message sent as-is
-// - plan: prepends /openspec-proposal to start planning workflow
-// - build: prepends /openspec-apply <change_id> to start build workflow
-func transformMessageForMode(message, mode, changeID string) (string, error) {
-	switch mode {
-	case "", "interactive":
-		return message, nil
-	case "plan":
-		return "/openspec-proposal " + message, nil
-	case "build":
-		if changeID == "" {
-			return "", fmt.Errorf("change_id is required for build mode (use build_all=true to auto-select)")
-		}
-		return "/openspec-apply " + changeID, nil
-	default:
-		return "", fmt.Errorf("invalid mode: %s (must be interactive, plan, or build)", mode)
-	}
-}
-
-// BuildModeState represents the state file for build mode sessions
-type BuildModeState struct {
-	ChangeID      string `json:"change_id"`
-	BuildAll      bool   `json:"build_all"`
-	Phase         string `json:"phase"` // "build", "verify"
-	MaxIterations int    `json:"max_iterations"`
-	Iteration     int    `json:"iteration"`
-	StartedAt     string `json:"started_at"`
-}
-
-// getFirstIncompleteChange queries openspec to find the first incomplete change
-func (s *Server) getFirstIncompleteChange(ctx context.Context, projectID string) (string, error) {
-	containerName := fmt.Sprintf("oubliette-%s", projectID[:8])
-	workspaceDir := s.projectMgr.GetWorkspaceDir(projectID)
-
-	// Run openspec list --json --sort name
-	execResult, err := s.runtime.Exec(ctx, containerName, container.ExecConfig{
-		Cmd:          []string{"bash", "-c", "source ~/.nvm/nvm.sh && cd /workspace && openspec list --json --sort name 2>/dev/null || echo '{\"changes\":[]}'"},
-		WorkingDir:   workspaceDir,
-		AttachStdout: true,
-		AttachStderr: true,
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to run openspec list: %w", err)
-	}
-
-	// Parse the JSON output
-	var result struct {
-		Changes []struct {
-			Name           string `json:"name"`
-			CompletedTasks int    `json:"completedTasks"`
-			TotalTasks     int    `json:"totalTasks"`
-			Status         string `json:"status"`
-		} `json:"changes"`
-	}
-	if err := json.Unmarshal([]byte(execResult.Stdout), &result); err != nil {
-		return "", fmt.Errorf("failed to parse openspec list output: %w", err)
-	}
-
-	// Find first incomplete change (where completedTasks < totalTasks)
-	for _, change := range result.Changes {
-		if change.CompletedTasks < change.TotalTasks {
-			return change.Name, nil
-		}
-	}
-
-	return "", nil // No incomplete changes
-}
-
-// createBuildModeStateFile creates the build-mode.json state file for the stop hook
-func (s *Server) createBuildModeStateFile(projectID, workspaceID, changeID string, buildAll bool) error {
-	state := BuildModeState{
-		ChangeID:      changeID,
-		BuildAll:      buildAll,
-		Phase:         "build",
-		MaxIterations: 100,
-		Iteration:     0,
-		StartedAt:     time.Now().UTC().Format(time.RFC3339),
-	}
-
-	stateJSON, err := json.MarshalIndent(state, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal build mode state: %w", err)
-	}
-
-	// Write to workspace .factory directory
-	projectDir := s.projectMgr.GetProjectDir(projectID)
-	stateFilePath := filepath.Join(projectDir, "workspaces", workspaceID, ".factory", "build-mode.json")
-
-	if err := os.WriteFile(stateFilePath, stateJSON, 0o644); err != nil {
-		return fmt.Errorf("failed to write build mode state file: %w", err)
-	}
-
-	logger.Info("Created build mode state file for change %s (build_all=%v)", changeID, buildAll)
-	return nil
-}
-
 func (s *Server) handleSendMessage(ctx context.Context, request *mcp.CallToolRequest, params *SendMessageParams) (*mcp.CallToolResult, any, error) {
 	if params.ProjectID == "" {
 		return nil, nil, fmt.Errorf("project_id is required")
@@ -761,29 +657,8 @@ func (s *Server) handleSendMessage(ctx context.Context, request *mcp.CallToolReq
 	if params.Message == "" {
 		return nil, nil, fmt.Errorf("message is required")
 	}
-	// workspace_id is optional - defaults to project's default workspace (resolved below)
 
-	// Handle build mode with build_all flag (auto-select first incomplete change)
-	changeID := params.ChangeID
-	buildAll := params.BuildAll
-	if params.Mode == "build" && changeID == "" && buildAll {
-		// Get first incomplete change from openspec
-		firstChange, err := s.getFirstIncompleteChange(ctx, params.ProjectID)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get first incomplete change: %w", err)
-		}
-		if firstChange == "" {
-			return nil, nil, fmt.Errorf("no incomplete changes found - all changes are complete")
-		}
-		changeID = firstChange
-		logger.Info("Build all mode: selected first incomplete change %s", changeID)
-	}
-
-	// Transform message based on mode
-	message, err := transformMessageForMode(params.Message, params.Mode, changeID)
-	if err != nil {
-		return nil, nil, err
-	}
+	message := params.Message
 
 	// Check auth and resolve workspace early so we can look up active sessions
 	authCtx, err := requireProjectAccess(ctx, params.ProjectID)
@@ -830,15 +705,6 @@ func (s *Server) handleSendMessage(ctx context.Context, request *mcp.CallToolReq
 			logger.Info("Session %s configured with caller tools from %s: %d tools", activeSess.SessionID, params.CallerID, len(params.CallerTools))
 		}
 
-		// Update TaskContext if mode/changeID are set
-		if params.Mode != "" || changeID != "" {
-			activeSess.SetTaskContext(&session.TaskContext{
-				ChangeID: changeID,
-				Mode:     params.Mode,
-				BuildAll: buildAll,
-			})
-		}
-
 		if err := s.activeSessions.SendMessage(activeSess.SessionID, message); err != nil {
 			return nil, nil, fmt.Errorf("failed to send message: %w", err)
 		}
@@ -861,14 +727,6 @@ func (s *Server) handleSendMessage(ctx context.Context, request *mcp.CallToolReq
 	env, err := s.prepareSessionEnvironment(ctx, params.ProjectID, workspaceID, params.CreateWorkspace, params.ExternalID, params.Source)
 	if err != nil {
 		return nil, nil, err
-	}
-
-	// Create build mode state file if in build mode (for stop hook to use)
-	if params.Mode == "build" && changeID != "" {
-		if err := s.createBuildModeStateFile(params.ProjectID, env.workspaceID, changeID, buildAll); err != nil {
-			logger.Error("Failed to create build mode state file: %v", err)
-			// Non-fatal - continue without state file (stop hook will just not be active)
-		}
 	}
 
 	// Use project model as default if not specified in params
@@ -903,15 +761,6 @@ func (s *Server) handleSendMessage(ctx context.Context, request *mcp.CallToolReq
 	// Set MCP session for SSE event push
 	activeSess.SetMCPSession(request.Session)
 
-	// Set TaskContext if mode/changeID are set
-	if params.Mode != "" || changeID != "" {
-		activeSess.SetTaskContext(&session.TaskContext{
-			ChangeID: changeID,
-			Mode:     params.Mode,
-			BuildAll: buildAll,
-		})
-	}
-
 	result := SendMessageResult{
 		SessionID:        sess.SessionID,
 		Spawned:          true,
@@ -941,7 +790,6 @@ type SessionEventsResult struct {
 	Failed        bool               `json:"failed"`
 	Error         string             `json:"error,omitempty"`
 	DroppedEvents int64              `json:"dropped_events"`
-	FinalResponse string             `json:"final_response,omitempty"` // Last assistant response (populated when completed)
 }
 
 type SessionEventItem struct {
@@ -1043,19 +891,6 @@ func (s *Server) handleSessionEvents(ctx context.Context, request *mcp.CallToolR
 		structuredResult.Error = activeSess.Error.Error()
 	}
 
-	// If session is completed, try to read the final response from the session file
-	if status == session.ActiveStatusCompleted {
-		runtimeSessionID := ""
-		if executor := activeSess.GetExecutor(); executor != nil {
-			runtimeSessionID = executor.RuntimeSessionID()
-		}
-		if runtimeSessionID != "" {
-			if finalResponse, err := s.readFinalResponseFromSession(ctx, activeSess.ProjectID, activeSess.WorkspaceID, runtimeSessionID); err == nil && finalResponse != "" {
-				structuredResult.FinalResponse = finalResponse
-			}
-		}
-	}
-
 	// Use pre-built allEvents if include_children, otherwise build from events
 	if params.IncludeChildren && len(allEvents) > 0 {
 		structuredResult.Events = allEvents
@@ -1079,57 +914,6 @@ func (s *Server) handleSessionEvents(ctx context.Context, request *mcp.CallToolR
 			&mcp.TextContent{Text: string(resultJSON)},
 		},
 	}, structuredResult, nil
-}
-
-// readFinalResponseFromSession reads the last assistant message from the Factory session JSONL file
-func (s *Server) readFinalResponseFromSession(ctx context.Context, projectID, workspaceID, runtimeSessionID string) (string, error) {
-	// The .factory directory is mounted from the host, so we can read directly
-	// Container path: /home/gogol/.factory/sessions/{encoded-cwd}/{session-id}.jsonl
-	// Host path: projects/{projectID}/.factory/sessions/{encoded-cwd}/{session-id}.jsonl
-	encodedCwd := fmt.Sprintf("-workspace-workspaces-%s", workspaceID)
-	sessionFile := filepath.Join(s.projectMgr.GetProjectDir(projectID), ".factory", "sessions", encodedCwd, runtimeSessionID+".jsonl")
-
-	// Read and parse the JSONL file to find the last assistant message
-	file, err := os.Open(sessionFile)
-	if err != nil {
-		return "", fmt.Errorf("failed to open session file: %w", err)
-	}
-	defer func() { _ = file.Close() }()
-
-	var lastAssistantText string
-	scanner := bufio.NewScanner(file)
-	// Increase buffer size for long lines
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 1024*1024)
-
-	for scanner.Scan() {
-		line := scanner.Bytes()
-
-		var entry struct {
-			Type    string `json:"type"`
-			Message struct {
-				Role    string `json:"role"`
-				Content []struct {
-					Type string `json:"type"`
-					Text string `json:"text"`
-				} `json:"content"`
-			} `json:"message"`
-		}
-		if err := json.Unmarshal(line, &entry); err != nil {
-			continue
-		}
-		if entry.Type == "message" && entry.Message.Role == "assistant" {
-			if len(entry.Message.Content) > 0 && entry.Message.Content[0].Type == "text" {
-				lastAssistantText = entry.Message.Content[0].Text
-			}
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("failed to scan session file: %w", err)
-	}
-
-	return lastAssistantText, nil
 }
 
 // GetRecursionLimitsParams for recursion configuration

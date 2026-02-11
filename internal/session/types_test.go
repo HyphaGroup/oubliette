@@ -213,7 +213,6 @@ func TestStartOptions(t *testing.T) {
 		Model:              "claude-opus-4-5-20251101",
 		AutonomyLevel:      "high",
 		ReasoningLevel:     "medium",
-		UseSpec:            true,
 		WorkspaceID:        "workspace-1",
 		ToolsAllowed:       []string{"read", "write"},
 		ToolsDisallowed:    []string{"execute"},
@@ -228,9 +227,6 @@ func TestStartOptions(t *testing.T) {
 	}
 	if opts.ReasoningLevel != "medium" {
 		t.Errorf("ReasoningLevel = %q, want %q", opts.ReasoningLevel, "medium")
-	}
-	if !opts.UseSpec {
-		t.Error("UseSpec should be true")
 	}
 	if len(opts.ToolsAllowed) != 2 {
 		t.Errorf("ToolsAllowed count = %d, want 2", len(opts.ToolsAllowed))

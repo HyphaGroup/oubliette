@@ -152,8 +152,8 @@ func TestRegistry_RegisterAndGetAllTools(t *testing.T) {
 		return NewTextResult("ok"), nil, nil
 	}
 
-	Register(r, ToolDef{Name: "tool_a", Description: "Tool A", Scope: toolScopeRead}, handler)
-	Register(r, ToolDef{Name: "tool_b", Description: "Tool B", Scope: toolScopeWrite}, handler)
+	Register(r, ToolDef{Name: "tool_a", Description: "Tool A", Target: TargetGlobal, Access: AccessRead}, handler)
+	Register(r, ToolDef{Name: "tool_b", Description: "Tool B", Target: TargetGlobal, Access: AccessWrite}, handler)
 
 	tools := r.GetAllTools()
 	if len(tools) != 2 {
@@ -172,9 +172,9 @@ func TestRegistry_GetToolsForScope(t *testing.T) {
 		return NewTextResult("ok"), nil, nil
 	}
 
-	Register(r, ToolDef{Name: "read_tool", Scope: toolScopeRead}, handler)
-	Register(r, ToolDef{Name: "write_tool", Scope: toolScopeWrite}, handler)
-	Register(r, ToolDef{Name: "admin_tool", Scope: toolScopeAdmin}, handler)
+	Register(r, ToolDef{Name: "read_tool", Target: TargetGlobal, Access: AccessRead}, handler)
+	Register(r, ToolDef{Name: "write_tool", Target: TargetGlobal, Access: AccessWrite}, handler)
+	Register(r, ToolDef{Name: "admin_tool", Target: TargetGlobal, Access: AccessAdmin}, handler)
 
 	// Admin sees all
 	adminTools := r.GetToolsForScope("admin")
@@ -182,16 +182,16 @@ func TestRegistry_GetToolsForScope(t *testing.T) {
 		t.Errorf("admin should see 3 tools, got %d", len(adminTools))
 	}
 
-	// Read-only sees only read
-	readTools := r.GetToolsForScope("read-only")
+	// Admin:ro sees read-only global tools
+	readTools := r.GetToolsForScope("admin:ro")
 	if len(readTools) != 1 || readTools[0].Name != "read_tool" {
-		t.Errorf("read-only should see 1 read tool, got %v", readTools)
+		t.Errorf("admin:ro should see 1 read tool, got %v", toolNames(readTools))
 	}
 
-	// Write (non-admin, non-read-only) sees read + write
-	writeTools := r.GetToolsForScope("project:abc123")
-	if len(writeTools) != 2 {
-		t.Errorf("write scope should see 2 tools, got %d", len(writeTools))
+	// Project scope sees only read global tools (not write/admin globals)
+	projectTools := r.GetToolsForScope("project:abc123")
+	if len(projectTools) != 1 || projectTools[0].Name != "read_tool" {
+		t.Errorf("project scope should see 1 read tool, got %d: %v", len(projectTools), toolNames(projectTools))
 	}
 }
 
@@ -206,7 +206,7 @@ func TestRegistry_CallTool(t *testing.T) {
 		return NewTextResult("Hello " + params.Name), nil, nil
 	}
 
-	Register(r, ToolDef{Name: "greet", Scope: toolScopeRead}, handler)
+	Register(r, ToolDef{Name: "greet", Target: TargetGlobal, Access: AccessRead}, handler)
 
 	args, _ := json.Marshal(map[string]string{"name": "World"})
 	result, err := r.CallTool(context.Background(), "greet", args)
@@ -242,15 +242,23 @@ func TestRegistry_IsToolAllowed(t *testing.T) {
 		return NewTextResult("ok"), nil, nil
 	}
 
-	Register(r, ToolDef{Name: "admin_only", Scope: toolScopeAdmin}, handler)
+	Register(r, ToolDef{Name: "admin_only", Target: TargetGlobal, Access: AccessAdmin}, handler)
 
 	if !r.IsToolAllowed("admin_only", "admin") {
 		t.Error("admin should be allowed admin_only")
 	}
-	if r.IsToolAllowed("admin_only", "read-only") {
-		t.Error("read-only should not be allowed admin_only")
+	if r.IsToolAllowed("admin_only", "admin:ro") {
+		t.Error("admin:ro should not be allowed admin_only")
 	}
 	if r.IsToolAllowed("nonexistent", "admin") {
 		t.Error("nonexistent tool should return false")
 	}
+}
+
+func toolNames(tools []*ToolDef) []string {
+	names := make([]string, len(tools))
+	for i, t := range tools {
+		names[i] = t.Name
+	}
+	return names
 }

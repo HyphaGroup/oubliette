@@ -3,6 +3,8 @@ package project
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -251,7 +253,7 @@ func TestManagerDelete(t *testing.T) {
 		}
 
 		// Verify deleted
-		if _, err := os.Stat(projectDir); !os.IsNotExist(err) {
+		if _, err := os.Stat(projectDir); !errors.Is(err, fs.ErrNotExist) {
 			t.Error("project directory should be deleted")
 		}
 	})
@@ -546,7 +548,7 @@ func TestManagerConcurrentGet(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(projectDir, "metadata.json"), data, 0o644)
 
 	var wg sync.WaitGroup
-	errors := make(chan error, 10)
+	errs := make(chan error, 10)
 
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
@@ -554,15 +556,15 @@ func TestManagerConcurrentGet(t *testing.T) {
 			defer wg.Done()
 			_, err := mgr.Get(projectID)
 			if err != nil {
-				errors <- err
+				errs <- err
 			}
 		}()
 	}
 
 	wg.Wait()
-	close(errors)
+	close(errs)
 
-	for err := range errors {
+	for err := range errs {
 		t.Errorf("concurrent Get() error = %v", err)
 	}
 }

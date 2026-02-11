@@ -1,6 +1,8 @@
 package cleanup
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -105,7 +107,7 @@ func TestCleaner_CleanupTmpFiles(t *testing.T) {
 	cleaner.cleanupTmpFiles()
 
 	// Old .tmp should be removed
-	if _, err := os.Stat(oldTmpFile); !os.IsNotExist(err) {
+	if _, err := os.Stat(oldTmpFile); !errors.Is(err, fs.ErrNotExist) {
 		t.Error("old .tmp file should have been removed")
 	}
 
@@ -143,7 +145,7 @@ func TestCleaner_CleanupTmpFiles_Nested(t *testing.T) {
 	cleaner.cleanupTmpFiles()
 
 	// Nested old .tmp should be removed
-	if _, err := os.Stat(nestedTmpFile); !os.IsNotExist(err) {
+	if _, err := os.Stat(nestedTmpFile); !errors.Is(err, fs.ErrNotExist) {
 		t.Error("nested old .tmp file should have been removed")
 	}
 }
@@ -250,7 +252,7 @@ func TestCleaner_CleanupOldSessions(t *testing.T) {
 	cleaner.cleanupOldSessions()
 
 	// Old completed session file should be removed
-	if _, err := os.Stat(oldSessionFile); !os.IsNotExist(err) {
+	if _, err := os.Stat(oldSessionFile); !errors.Is(err, fs.ErrNotExist) {
 		t.Error("old completed session should have been removed")
 	}
 
@@ -288,7 +290,7 @@ func TestCleaner_CleanupOldSessions_FailedStatus(t *testing.T) {
 	cleaner.cleanupOldSessions()
 
 	// Old failed session file should be removed
-	if _, err := os.Stat(failedSessionFile); !os.IsNotExist(err) {
+	if _, err := os.Stat(failedSessionFile); !errors.Is(err, fs.ErrNotExist) {
 		t.Error("old failed session should have been removed")
 	}
 }

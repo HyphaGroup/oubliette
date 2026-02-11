@@ -3,18 +3,7 @@ package mcp
 import "github.com/HyphaGroup/oubliette/internal/auth"
 
 // IsToolAllowed checks if a tool is allowed for a given token scope and project
-// Uses new Target/Access model if set, falls back to legacy Scope if not
 func IsToolAllowed(tool *ToolDef, tokenScope, projectID string) bool {
-	// If new model is set, use it
-	if tool.Target != "" && tool.Access != "" {
-		return isToolAllowedNew(tool, tokenScope, projectID)
-	}
-	// Fall back to legacy scope check
-	return isToolAllowedForTokenScope(tool.Scope, tokenScope)
-}
-
-// isToolAllowedNew implements the new permission model
-func isToolAllowedNew(tool *ToolDef, tokenScope, projectID string) bool {
 	isAdmin := tokenScope == auth.ScopeAdmin
 	isAdminRO := auth.IsAdminScope(tokenScope) && auth.IsReadOnlyScope(tokenScope)
 	isProjectScope := auth.IsProjectScope(tokenScope)

@@ -35,13 +35,6 @@ const (
 	AccessAdmin ToolAccess = "admin"
 )
 
-// Legacy tool scope categories (for backwards compat during migration)
-const (
-	toolScopeAdmin = "admin" // admin only
-	toolScopeWrite = "write" // admin + write
-	toolScopeRead  = "read"  // all scopes
-)
-
 // getToolsForScope returns tool definitions available for the given token scope
 func (s *Server) getToolsForScope(scope string) []ToolDefinition {
 	tools := s.registry.GetToolsForScope(scope)

@@ -354,7 +354,6 @@ func (s *Server) createAndStartContainer(ctx context.Context, containerName, ima
 	}
 
 	// Inject provider credentials from unified registry
-	// TODO: Support project-specific credential refs (credential_refs.provider)
 	if s.credentials != nil {
 		if provCred, ok := s.credentials.GetDefaultProviderCredential(); ok && provCred.APIKey != "" {
 			envVar := config.ProviderEnvVar(provCred.Provider)

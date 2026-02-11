@@ -32,7 +32,7 @@ type CredentialRefs struct {
 
 // ContainerConfig defines container settings
 type ContainerConfig struct {
-	Type          string `json:"type"`                     // base, dev, osint
+	Type          string `json:"type"`                     // base, dev
 	ImageName     string `json:"image_name"`               // e.g., oubliette-dev:latest
 	HasDockerfile bool   `json:"has_dockerfile,omitempty"` // true if custom Dockerfile exists
 	Status        string `json:"status,omitempty"`         // runtime state

@@ -46,7 +46,7 @@ type CreateProjectParams struct {
 	Permissions   map[string]any `json:"permissions,omitempty"`    // Custom permissions (OpenCode format)
 
 	// Container configuration
-	ContainerType string `json:"container_type,omitempty"` // base, dev, osint (default: dev)
+	ContainerType string `json:"container_type,omitempty"` // base, dev (default: dev)
 }
 
 func (s *Server) handleCreateProject(ctx context.Context, request *mcp.CallToolRequest, params *CreateProjectParams) (*mcp.CallToolResult, any, error) {
