@@ -20,7 +20,7 @@ The `session` tool has 30+ parameters across 7 actions. Many are dead (Droid-era
 | `reasoning_level` | Sent as OpenCode `variant` per-message. Values: off/low/medium/high. | **Keep** |
 | `tools_allowed` | Whitelist of tools the agent can use. | **Keep** |
 | `tools_disallowed` | Blacklist of tools. | **Keep** |
-| `append_system_prompt` | Appended to system prompt. For child sessions, this is the primary way to inject depth/context. For prime sessions, it's rarely used. | **Rename to `system_prompt`** |
+| `append_system_prompt` | Prepended to the user message with a `---` separator. Not a real system prompt -- OpenCode has no system prompt API. Just message concatenation with extra steps. For child sessions, `handleSpawnChild` builds a depth/context preamble and passes it here. | **Remove** (callers can prepend to `message` directly; child spawn inlines it) |
 | `context` | Arbitrary key/value map. Stored on session metadata as `TaskContext`. Never read by any runtime logic. Only consumed by child session `.rlm-context/` file writes. | **Keep for child spawns, document clearly** |
 | `external_id` | Caller-provided ID for workspace correlation (e.g., PR number, ticket ID). | **Keep** |
 | `source` | Label for workspace origin (e.g., "github", "linear"). | **Keep** |
@@ -42,7 +42,7 @@ The `session` tool has 30+ parameters across 7 actions. Many are dead (Droid-era
 | `reasoning_level` | Override for this message. | **Keep** |
 | `tools_allowed` | Override for this message. | **Keep** |
 | `tools_disallowed` | Override for this message. | **Keep** |
-| `append_system_prompt` | Appended to system prompt if new session spawned. Ignored for existing sessions. | **Rename to `system_prompt`, document behavior** |
+| `append_system_prompt` | Prepended to message if new session spawned. Ignored for existing sessions. Not a real system prompt. | **Remove** (same as spawn) |
 | `caller_id` | ID of the caller agent (for tool relay). | **Keep** |
 | `caller_tools` | Tool definitions the caller exposes to the spawned agent. | **Keep** |
 | `attachments` | File attachments (base64 or URL). | **Keep** |
@@ -87,18 +87,18 @@ The `session` tool has 30+ parameters across 7 actions. Many are dead (Droid-era
 
 ## What Changes
 
-### 1. Remove Dead Parameters (5 params)
+### 1. Remove Dead/Redundant Parameters (6 params)
 
 - **`mode`** — Droid slash-command system. Remove from `SendMessageParams`, `SessionParams`.
 - **`change_id`** — Build mode only. Remove.
 - **`build_all`** — Build mode only. Remove.
 - **`use_spec`** — Never read by OpenCode. Remove from `SpawnParams`, `SessionParams`, `StartOptions`, `ExecuteRequest`.
+- **`append_system_prompt`** — Not a real system prompt. OpenCode has no system prompt API. The runtime just does `systemPrompt + "\n\n---\n\n" + prompt` -- pure message concatenation. Callers can prepend context to `message` directly. For child sessions, `handleSpawnChild` already builds the depth/context preamble and can inline it into the prompt. Remove from `SpawnParams`, `SendMessageParams`, `SessionParams`, `StartOptions`, `ExecuteRequest`.
 - Remove `transformMessageForMode()`, `getFirstIncompleteChange()`, `createBuildModeStateFile()`, `BuildModeState`, `SessionMode` type and constants.
 
-### 2. Rename for Clarity (2 params)
+### 2. Rename for Clarity (1 param)
 
 - **`prompt` → `message`** on spawn action. The spawn "prompt" is the same thing as a "message" -- it's the first text sent to the agent. Having both `prompt` (on spawn) and `message` (on message action) for the same concept is confusing. Unify on `message`. Keep `prompt` as an alias for backwards compat for one release cycle, then remove.
-- **`append_system_prompt` → `system_prompt`**. The "append" prefix is an implementation detail. Callers just want to set additional system prompt text.
 
 ### 3. Merge `spawn` into `message` (Action Consolidation)
 
@@ -128,7 +128,6 @@ Key behaviors:
   - Sessions auto-resume: sending a message to a project reuses the active session.
   - Set new_session=true on spawn to force a fresh session.
   - model defaults to the project's configured model.
-  - system_prompt is appended to the agent's system prompt (useful for task-specific context).
   - Events are pushed via SSE notifications. Use events action to poll if needed.
 ```
 
@@ -148,7 +147,6 @@ Remove all code supporting the dead parameters:
 ## Impact
 
 - **Breaking**: `prompt` field renamed to `message` on spawn (keep alias temporarily)
-- **Breaking**: `mode`, `change_id`, `build_all`, `use_spec` removed (dead params, no real callers)
-- **Non-breaking**: `append_system_prompt` renamed to `system_prompt` (keep alias temporarily)
-- Net reduction: ~200 lines of dead code
+- **Breaking**: `mode`, `change_id`, `build_all`, `use_spec`, `append_system_prompt` removed (dead/redundant params, no real callers)
+- Net reduction: ~250 lines of dead code
 - Better agent UX: clear tool description, fewer confusing params
