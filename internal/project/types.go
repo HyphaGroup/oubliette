@@ -22,8 +22,7 @@ type RecursionConfig struct {
 
 // CredentialRefs specifies which credentials to use for a project
 type CredentialRefs struct {
-	GitHub   string `json:"github,omitempty"`
-	Provider string `json:"provider,omitempty"`
+	GitHub string `json:"github,omitempty"`
 }
 
 // Project represents a managed project
@@ -63,7 +62,6 @@ type CreateProjectRequest struct {
 	GitHubToken        string
 	RemoteURL          string
 	InitGit            bool
-	Languages          []string
 	WorkspaceIsolation bool
 	ProtectedPaths     []string
 

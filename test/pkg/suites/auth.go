@@ -200,7 +200,7 @@ func GetAuthTests() []*testpkg.TestCase {
 				}
 
 				if tokenID != "" {
-					ctx.Client.InvokeTool("token", map[string]interface{}{"action": "revoke","token_id": tokenID})
+					ctx.Client.InvokeTool("token", map[string]interface{}{"action": "revoke", "token_id": tokenID})
 				}
 
 				return nil
@@ -244,7 +244,7 @@ func GetAuthTests() []*testpkg.TestCase {
 				}
 
 				if tokenID != "" {
-					ctx.Client.InvokeTool("token", map[string]interface{}{"action": "revoke","token_id": tokenID})
+					ctx.Client.InvokeTool("token", map[string]interface{}{"action": "revoke", "token_id": tokenID})
 				}
 
 				return nil
@@ -288,7 +288,7 @@ func GetAuthTests() []*testpkg.TestCase {
 				}
 
 				if tokenID != "" {
-					ctx.Client.InvokeTool("token", map[string]interface{}{"action": "revoke","token_id": tokenID})
+					ctx.Client.InvokeTool("token", map[string]interface{}{"action": "revoke", "token_id": tokenID})
 				}
 
 				return nil

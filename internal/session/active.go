@@ -24,11 +24,6 @@ const (
 	ActiveStatusTimedOut  ActiveStatus = "timed_out" // Session timed out
 )
 
-// TaskContext tracks what OpenSpec change/task a session is working on
-type TaskContext struct {
-	ChangeID string `json:"change_id,omitempty"`
-}
-
 // CallerToolDefinition defines a tool that can be called on the external caller
 type CallerToolDefinition struct {
 	Name        string `json:"name"`
@@ -53,8 +48,7 @@ type ActiveSession struct {
 	StartedAt    time.Time
 	LastActivity time.Time
 	Status       ActiveStatus
-	Error        error // Set when Status is Failed
-	TaskCtx      *TaskContext
+	Error        error              // Set when Status is Failed
 	mcpSession   *mcp.ServerSession // MCP session for SSE event push
 
 	// Caller tool relay fields
@@ -151,21 +145,6 @@ func (a *ActiveSession) GetStatus() ActiveStatus {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.Status
-}
-
-// SetTaskContext updates the task context for this session
-func (a *ActiveSession) SetTaskContext(ctx *TaskContext) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.TaskCtx = ctx
-	a.LastActivity = time.Now()
-}
-
-// GetTaskContext returns the current task context
-func (a *ActiveSession) GetTaskContext() *TaskContext {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.TaskCtx
 }
 
 // LastActivityTime returns the last activity time
@@ -501,22 +480,6 @@ func (m *ActiveSessionManager) CountByProject(projectID string) int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.byProject[projectID])
-}
-
-// GetSessionsByChangeID returns all active sessions working on a specific change
-func (m *ActiveSessionManager) GetSessionsByChangeID(projectID, changeID string) []*ActiveSession {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	var result []*ActiveSession
-	for _, sessionID := range m.byProject[projectID] {
-		if sess, ok := m.sessions[sessionID]; ok {
-			if ctx := sess.GetTaskContext(); ctx != nil && ctx.ChangeID == changeID {
-				result = append(result, sess)
-			}
-		}
-	}
-	return result
 }
 
 // Close shuts down the manager and all active sessions

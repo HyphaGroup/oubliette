@@ -9,16 +9,20 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Schedule Management Handlers
+// ScheduleParams is the params struct for the schedule tool
+type ScheduleParams struct {
+	Action string `json:"action"` // Required: create, list, get, update, delete, trigger, history
 
-type ScheduleCreateParams struct {
-	Name            string                    `json:"name"`
-	CronExpr        string                    `json:"cron_expr"`
-	Prompt          string                    `json:"prompt"`
-	Targets         []ScheduleTargetParams    `json:"targets"`
+	Name            string                    `json:"name,omitempty"`
+	CronExpr        string                    `json:"cron_expr,omitempty"`
+	Prompt          string                    `json:"prompt,omitempty"`
+	Targets         []ScheduleTargetParams    `json:"targets,omitempty"`
 	Enabled         *bool                     `json:"enabled,omitempty"`
 	OverlapBehavior *schedule.OverlapBehavior `json:"overlap_behavior,omitempty"`
 	SessionBehavior *schedule.SessionBehavior `json:"session_behavior,omitempty"`
+	ScheduleID      string                    `json:"schedule_id,omitempty"`
+	ProjectID       string                    `json:"project_id,omitempty"`
+	Limit           int                       `json:"limit,omitempty"`
 }
 
 type ScheduleTargetParams struct {
@@ -26,13 +30,39 @@ type ScheduleTargetParams struct {
 	WorkspaceID string `json:"workspace_id,omitempty"`
 }
 
-func (s *Server) handleScheduleCreate(ctx context.Context, request *mcp.CallToolRequest, params *ScheduleCreateParams) (*mcp.CallToolResult, any, error) {
+var scheduleActions = []string{"create", "list", "get", "update", "delete", "trigger", "history"}
+
+func (s *Server) handleSchedule(ctx context.Context, request *mcp.CallToolRequest, params *ScheduleParams) (*mcp.CallToolResult, any, error) {
+	if params.Action == "" {
+		return nil, nil, missingActionError("schedule", scheduleActions)
+	}
+
+	switch params.Action {
+	case "create":
+		return s.handleScheduleCreate(ctx, request, params)
+	case "list":
+		return s.handleScheduleList(ctx, request, params)
+	case "get":
+		return s.handleScheduleGet(ctx, request, params)
+	case "update":
+		return s.handleScheduleUpdate(ctx, request, params)
+	case "delete":
+		return s.handleScheduleDelete(ctx, request, params)
+	case "trigger":
+		return s.handleScheduleTrigger(ctx, request, params)
+	case "history":
+		return s.handleScheduleHistory(ctx, request, params)
+	default:
+		return nil, nil, actionError("schedule", params.Action, scheduleActions)
+	}
+}
+
+func (s *Server) handleScheduleCreate(ctx context.Context, request *mcp.CallToolRequest, params *ScheduleParams) (*mcp.CallToolResult, any, error) {
 	authCtx, err := requireAuth(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Validate required fields
 	if params.Name == "" {
 		return nil, nil, fmt.Errorf("name is required")
 	}
@@ -46,14 +76,12 @@ func (s *Server) handleScheduleCreate(ctx context.Context, request *mcp.CallTool
 		return nil, nil, fmt.Errorf("at least one target is required")
 	}
 
-	// Validate token can access all targets
 	for _, target := range params.Targets {
 		if !authCtx.CanAccessProject(target.ProjectID) {
 			return nil, nil, fmt.Errorf("access denied to project %s", target.ProjectID)
 		}
 	}
 
-	// Build schedule
 	sched := &schedule.Schedule{
 		Name:            params.Name,
 		CronExpr:        params.CronExpr,
@@ -81,7 +109,6 @@ func (s *Server) handleScheduleCreate(ctx context.Context, request *mcp.CallTool
 		sched.SessionBehavior = *params.SessionBehavior
 	}
 
-	// Convert targets
 	for _, t := range params.Targets {
 		sched.Targets = append(sched.Targets, schedule.ScheduleTarget{
 			ProjectID:   t.ProjectID,
@@ -89,7 +116,6 @@ func (s *Server) handleScheduleCreate(ctx context.Context, request *mcp.CallTool
 		})
 	}
 
-	// Create in store
 	if err := s.scheduleStore.Create(sched); err != nil {
 		return nil, nil, fmt.Errorf("failed to create schedule: %w", err)
 	}
@@ -105,17 +131,11 @@ func (s *Server) handleScheduleCreate(ctx context.Context, request *mcp.CallTool
 	}
 
 	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: result},
-		},
+		Content: []mcp.Content{&mcp.TextContent{Text: result}},
 	}, sched, nil
 }
 
-type ScheduleListParams struct {
-	ProjectID string `json:"project_id,omitempty"`
-}
-
-func (s *Server) handleScheduleList(ctx context.Context, request *mcp.CallToolRequest, params *ScheduleListParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleScheduleList(ctx context.Context, request *mcp.CallToolRequest, params *ScheduleParams) (*mcp.CallToolResult, any, error) {
 	authCtx, err := requireAuth(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -134,12 +154,10 @@ func (s *Server) handleScheduleList(ctx context.Context, request *mcp.CallToolRe
 		return nil, nil, fmt.Errorf("failed to list schedules: %w", err)
 	}
 
-	// Filter by access if not admin
 	if !auth.IsAdminScope(authCtx.Token.Scope) {
 		projectID := auth.ExtractProjectID(authCtx.Token.Scope)
 		var filtered []*schedule.Schedule
 		for _, sched := range schedules {
-			// Check if any target belongs to accessible project
 			for _, target := range sched.Targets {
 				if target.ProjectID == projectID {
 					filtered = append(filtered, sched)
@@ -152,9 +170,7 @@ func (s *Server) handleScheduleList(ctx context.Context, request *mcp.CallToolRe
 
 	if len(schedules) == 0 {
 		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: "No schedules found."},
-			},
+			Content: []mcp.Content{&mcp.TextContent{Text: "No schedules found."}},
 		}, nil, nil
 	}
 
@@ -175,17 +191,11 @@ func (s *Server) handleScheduleList(ctx context.Context, request *mcp.CallToolRe
 	}
 
 	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: result},
-		},
+		Content: []mcp.Content{&mcp.TextContent{Text: result}},
 	}, schedules, nil
 }
 
-type ScheduleGetParams struct {
-	ScheduleID string `json:"schedule_id"`
-}
-
-func (s *Server) handleScheduleGet(ctx context.Context, request *mcp.CallToolRequest, params *ScheduleGetParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleScheduleGet(ctx context.Context, request *mcp.CallToolRequest, params *ScheduleParams) (*mcp.CallToolResult, any, error) {
 	authCtx, err := requireAuth(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -200,19 +210,8 @@ func (s *Server) handleScheduleGet(ctx context.Context, request *mcp.CallToolReq
 		return nil, nil, fmt.Errorf("failed to get schedule: %w", err)
 	}
 
-	// Check access
-	if !auth.IsAdminScope(authCtx.Token.Scope) {
-		projectID := auth.ExtractProjectID(authCtx.Token.Scope)
-		hasAccess := false
-		for _, target := range sched.Targets {
-			if target.ProjectID == projectID {
-				hasAccess = true
-				break
-			}
-		}
-		if !hasAccess {
-			return nil, nil, fmt.Errorf("access denied to schedule %s", params.ScheduleID)
-		}
+	if err := requireScheduleAccess(authCtx, sched); err != nil {
+		return nil, nil, err
 	}
 
 	status := "enabled"
@@ -248,7 +247,6 @@ func (s *Server) handleScheduleGet(ctx context.Context, request *mcp.CallToolReq
 			result += fmt.Sprintf("    Last Run: %s\n", t.LastExecutedAt.Format("2006-01-02 15:04:05"))
 		}
 		if t.LastOutput != "" {
-			// Truncate output for display
 			output := t.LastOutput
 			if len(output) > 200 {
 				output = output[:200] + "..."
@@ -258,24 +256,11 @@ func (s *Server) handleScheduleGet(ctx context.Context, request *mcp.CallToolReq
 	}
 
 	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: result},
-		},
+		Content: []mcp.Content{&mcp.TextContent{Text: result}},
 	}, sched, nil
 }
 
-type ScheduleUpdateParams struct {
-	ScheduleID      string                    `json:"schedule_id"`
-	Name            *string                   `json:"name,omitempty"`
-	CronExpr        *string                   `json:"cron_expr,omitempty"`
-	Prompt          *string                   `json:"prompt,omitempty"`
-	Enabled         *bool                     `json:"enabled,omitempty"`
-	OverlapBehavior *schedule.OverlapBehavior `json:"overlap_behavior,omitempty"`
-	SessionBehavior *schedule.SessionBehavior `json:"session_behavior,omitempty"`
-	Targets         []ScheduleTargetParams    `json:"targets,omitempty"`
-}
-
-func (s *Server) handleScheduleUpdate(ctx context.Context, request *mcp.CallToolRequest, params *ScheduleUpdateParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleScheduleUpdate(ctx context.Context, request *mcp.CallToolRequest, params *ScheduleParams) (*mcp.CallToolResult, any, error) {
 	authCtx, err := requireAuth(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -285,38 +270,36 @@ func (s *Server) handleScheduleUpdate(ctx context.Context, request *mcp.CallTool
 		return nil, nil, fmt.Errorf("schedule_id is required")
 	}
 
-	// Get existing schedule to check access
 	sched, err := s.scheduleStore.Get(params.ScheduleID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get schedule: %w", err)
 	}
 
-	// Check access - must have access to existing targets
-	if !auth.IsAdminScope(authCtx.Token.Scope) {
-		projectID := auth.ExtractProjectID(authCtx.Token.Scope)
-		hasAccess := false
-		for _, target := range sched.Targets {
-			if target.ProjectID == projectID {
-				hasAccess = true
-				break
-			}
-		}
-		if !hasAccess {
-			return nil, nil, fmt.Errorf("access denied to schedule %s", params.ScheduleID)
-		}
+	if err := requireScheduleAccess(authCtx, sched); err != nil {
+		return nil, nil, err
 	}
 
-	// Build update
+	// Convert non-empty strings to pointers for partial update
+	var name, cronExpr, prompt *string
+	if params.Name != "" {
+		name = &params.Name
+	}
+	if params.CronExpr != "" {
+		cronExpr = &params.CronExpr
+	}
+	if params.Prompt != "" {
+		prompt = &params.Prompt
+	}
+
 	update := &schedule.ScheduleUpdate{
-		Name:            params.Name,
-		CronExpr:        params.CronExpr,
-		Prompt:          params.Prompt,
+		Name:            name,
+		CronExpr:        cronExpr,
+		Prompt:          prompt,
 		Enabled:         params.Enabled,
 		OverlapBehavior: params.OverlapBehavior,
 		SessionBehavior: params.SessionBehavior,
 	}
 
-	// Validate behaviors if provided
 	if params.OverlapBehavior != nil && !schedule.IsValidOverlapBehavior(*params.OverlapBehavior) {
 		return nil, nil, fmt.Errorf("invalid overlap_behavior: %s", *params.OverlapBehavior)
 	}
@@ -324,7 +307,6 @@ func (s *Server) handleScheduleUpdate(ctx context.Context, request *mcp.CallTool
 		return nil, nil, fmt.Errorf("invalid session_behavior: %s", *params.SessionBehavior)
 	}
 
-	// Convert and validate targets if provided
 	if len(params.Targets) > 0 {
 		for _, target := range params.Targets {
 			if !authCtx.CanAccessProject(target.ProjectID) {
@@ -344,17 +326,11 @@ func (s *Server) handleScheduleUpdate(ctx context.Context, request *mcp.CallTool
 	}
 
 	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("✅ Schedule %s updated successfully.", params.ScheduleID)},
-		},
+		Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("✅ Schedule %s updated successfully.", params.ScheduleID)}},
 	}, nil, nil
 }
 
-type ScheduleDeleteParams struct {
-	ScheduleID string `json:"schedule_id"`
-}
-
-func (s *Server) handleScheduleDelete(ctx context.Context, request *mcp.CallToolRequest, params *ScheduleDeleteParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleScheduleDelete(ctx context.Context, request *mcp.CallToolRequest, params *ScheduleParams) (*mcp.CallToolResult, any, error) {
 	authCtx, err := requireAuth(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -364,25 +340,13 @@ func (s *Server) handleScheduleDelete(ctx context.Context, request *mcp.CallTool
 		return nil, nil, fmt.Errorf("schedule_id is required")
 	}
 
-	// Get existing schedule to check access
 	sched, err := s.scheduleStore.Get(params.ScheduleID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get schedule: %w", err)
 	}
 
-	// Check access
-	if !auth.IsAdminScope(authCtx.Token.Scope) {
-		projectID := auth.ExtractProjectID(authCtx.Token.Scope)
-		hasAccess := false
-		for _, target := range sched.Targets {
-			if target.ProjectID == projectID {
-				hasAccess = true
-				break
-			}
-		}
-		if !hasAccess {
-			return nil, nil, fmt.Errorf("access denied to schedule %s", params.ScheduleID)
-		}
+	if err := requireScheduleAccess(authCtx, sched); err != nil {
+		return nil, nil, err
 	}
 
 	if err := s.scheduleStore.Delete(params.ScheduleID); err != nil {
@@ -390,17 +354,11 @@ func (s *Server) handleScheduleDelete(ctx context.Context, request *mcp.CallTool
 	}
 
 	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("✅ Schedule %s deleted successfully.", params.ScheduleID)},
-		},
+		Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("✅ Schedule %s deleted successfully.", params.ScheduleID)}},
 	}, nil, nil
 }
 
-type ScheduleTriggerParams struct {
-	ScheduleID string `json:"schedule_id"`
-}
-
-func (s *Server) handleScheduleTrigger(ctx context.Context, request *mcp.CallToolRequest, params *ScheduleTriggerParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleScheduleTrigger(ctx context.Context, request *mcp.CallToolRequest, params *ScheduleParams) (*mcp.CallToolResult, any, error) {
 	authCtx, err := requireAuth(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -410,28 +368,15 @@ func (s *Server) handleScheduleTrigger(ctx context.Context, request *mcp.CallToo
 		return nil, nil, fmt.Errorf("schedule_id is required")
 	}
 
-	// Get schedule to check access and get details
 	sched, err := s.scheduleStore.Get(params.ScheduleID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get schedule: %w", err)
 	}
 
-	// Check access
-	if !auth.IsAdminScope(authCtx.Token.Scope) {
-		projectID := auth.ExtractProjectID(authCtx.Token.Scope)
-		hasAccess := false
-		for _, target := range sched.Targets {
-			if target.ProjectID == projectID {
-				hasAccess = true
-				break
-			}
-		}
-		if !hasAccess {
-			return nil, nil, fmt.Errorf("access denied to schedule %s", params.ScheduleID)
-		}
+	if err := requireScheduleAccess(authCtx, sched); err != nil {
+		return nil, nil, err
 	}
 
-	// Trigger via runner
 	if s.scheduleRunner == nil {
 		return nil, nil, fmt.Errorf("schedule runner not initialized")
 	}
@@ -448,18 +393,11 @@ func (s *Server) handleScheduleTrigger(ctx context.Context, request *mcp.CallToo
 	}
 
 	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: result},
-		},
+		Content: []mcp.Content{&mcp.TextContent{Text: result}},
 	}, sessionIDs, nil
 }
 
-type ScheduleHistoryParams struct {
-	ScheduleID string `json:"schedule_id"`
-	Limit      int    `json:"limit,omitempty"`
-}
-
-func (s *Server) handleScheduleHistory(ctx context.Context, request *mcp.CallToolRequest, params *ScheduleHistoryParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleScheduleHistory(ctx context.Context, request *mcp.CallToolRequest, params *ScheduleParams) (*mcp.CallToolResult, any, error) {
 	authCtx, err := requireAuth(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -469,25 +407,13 @@ func (s *Server) handleScheduleHistory(ctx context.Context, request *mcp.CallToo
 		return nil, nil, fmt.Errorf("schedule_id is required")
 	}
 
-	// Get schedule to check access
 	sched, err := s.scheduleStore.Get(params.ScheduleID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get schedule: %w", err)
 	}
 
-	// Check access
-	if !auth.IsAdminScope(authCtx.Token.Scope) {
-		projectID := auth.ExtractProjectID(authCtx.Token.Scope)
-		hasAccess := false
-		for _, target := range sched.Targets {
-			if target.ProjectID == projectID {
-				hasAccess = true
-				break
-			}
-		}
-		if !hasAccess {
-			return nil, nil, fmt.Errorf("access denied to schedule %s", params.ScheduleID)
-		}
+	if err := requireScheduleAccess(authCtx, sched); err != nil {
+		return nil, nil, err
 	}
 
 	limit := params.Limit
@@ -502,9 +428,7 @@ func (s *Server) handleScheduleHistory(ctx context.Context, request *mcp.CallToo
 
 	if len(executions) == 0 {
 		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: fmt.Sprintf("No execution history found for schedule %s.", params.ScheduleID)},
-			},
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("No execution history found for schedule %s.", params.ScheduleID)}},
 		}, nil, nil
 	}
 
@@ -531,8 +455,20 @@ func (s *Server) handleScheduleHistory(ctx context.Context, request *mcp.CallToo
 	}
 
 	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: result},
-		},
+		Content: []mcp.Content{&mcp.TextContent{Text: result}},
 	}, executions, nil
+}
+
+// requireScheduleAccess checks if the auth context has access to a schedule
+func requireScheduleAccess(authCtx *auth.AuthContext, sched *schedule.Schedule) error {
+	if auth.IsAdminScope(authCtx.Token.Scope) {
+		return nil
+	}
+	projectID := auth.ExtractProjectID(authCtx.Token.Scope)
+	for _, target := range sched.Targets {
+		if target.ProjectID == projectID {
+			return nil
+		}
+	}
+	return fmt.Errorf("access denied to schedule %s", sched.ID)
 }

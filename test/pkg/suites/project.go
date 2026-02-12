@@ -17,7 +17,7 @@ func GetProjectTests() []*testpkg.TestCase {
 			Timeout:     30 * time.Second,
 			Execute: func(ctx *testpkg.TestContext) error {
 				projName := "test-proj-create"
-				
+
 				// Pre-cleanup
 				ctx.PreTestCleanup(projName)
 
@@ -111,7 +111,7 @@ func GetProjectTests() []*testpkg.TestCase {
 					"test-proj-multi-2",
 					"test-proj-multi-3",
 				}
-				
+
 				// Pre-cleanup all
 				for _, projName := range projects {
 					ctx.PreTestCleanup(projName)
@@ -151,7 +151,7 @@ func GetProjectTests() []*testpkg.TestCase {
 			Execute: func(ctx *testpkg.TestContext) error {
 				projName := "test-proj-get"
 				description := "Test project for get validation"
-				
+
 				// Pre-cleanup
 				ctx.PreTestCleanup(projName)
 
@@ -195,7 +195,7 @@ func GetProjectTests() []*testpkg.TestCase {
 			Timeout:     30 * time.Second,
 			Execute: func(ctx *testpkg.TestContext) error {
 				projName := "test-proj-delete"
-				
+
 				// Pre-cleanup
 				ctx.PreTestCleanup(projName)
 

@@ -89,10 +89,11 @@ func TestGetTokenInfo_EdgeCases(t *testing.T) {
 	})
 }
 
-func TestTokenCreateParams(t *testing.T) {
-	params := TokenCreateParams{
-		Name:  "test-token",
-		Scope: "admin",
+func TestTokenParams(t *testing.T) {
+	params := TokenParams{
+		Action: "create",
+		Name:   "test-token",
+		Scope:  "admin",
 	}
 
 	if params.Name != "test-token" {
@@ -101,14 +102,13 @@ func TestTokenCreateParams(t *testing.T) {
 	if params.Scope != "admin" {
 		t.Errorf("Scope = %q, want %q", params.Scope, "admin")
 	}
-}
 
-func TestTokenRevokeParams(t *testing.T) {
-	params := TokenRevokeParams{
+	revokeParams := TokenParams{
+		Action:  "revoke",
 		TokenID: "token-to-revoke",
 	}
 
-	if params.TokenID != "token-to-revoke" {
-		t.Errorf("TokenID = %q, want %q", params.TokenID, "token-to-revoke")
+	if revokeParams.TokenID != "token-to-revoke" {
+		t.Errorf("TokenID = %q, want %q", revokeParams.TokenID, "token-to-revoke")
 	}
 }

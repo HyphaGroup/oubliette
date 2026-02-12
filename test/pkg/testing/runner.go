@@ -12,12 +12,12 @@ import (
 
 // TestRunner runs a collection of test cases
 type TestRunner struct {
-	client    *client.MCPClient
-	tests     []*TestCase
-	filter    TestFilter
-	verbose   bool
-	jsonOut   bool
-	results   []*TestResult
+	client  *client.MCPClient
+	tests   []*TestCase
+	filter  TestFilter
+	verbose bool
+	jsonOut bool
+	results []*TestResult
 }
 
 // TestFilter defines filtering criteria for tests

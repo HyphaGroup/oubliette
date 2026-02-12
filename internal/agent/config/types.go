@@ -26,8 +26,7 @@ type ProjectConfig struct {
 
 // CredentialRefs specifies which credentials to use for a project
 type CredentialRefs struct {
-	GitHub   string `json:"github,omitempty"`
-	Provider string `json:"provider,omitempty"`
+	GitHub string `json:"github,omitempty"`
 }
 
 // ContainerConfig defines container settings

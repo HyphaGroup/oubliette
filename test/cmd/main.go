@@ -117,7 +117,7 @@ func main() {
 		// Add test suites
 		runner.AddTests(suites.GetBasicTests())
 		runner.AddTests(suites.GetProjectTests())
-		runner.AddTests(suites.GetWorkspaceTests())     // Workspace management tests
+		runner.AddTests(suites.GetWorkspaceTests()) // Workspace management tests
 		runner.AddTests(suites.GetContainerTests())
 		runner.AddTests(suites.GetSessionTests())
 		runner.AddTests(suites.GetRecursionTests())

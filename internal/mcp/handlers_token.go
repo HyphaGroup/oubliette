@@ -9,14 +9,35 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Token Management Handlers
+// TokenParams is the params struct for the token tool
+type TokenParams struct {
+	Action string `json:"action"` // Required: create, list, revoke
 
-type TokenCreateParams struct {
-	Name  string `json:"name"`
-	Scope string `json:"scope"`
+	Name    string `json:"name,omitempty"`
+	Scope   string `json:"scope,omitempty"`
+	TokenID string `json:"token_id,omitempty"`
 }
 
-func (s *Server) handleTokenCreate(ctx context.Context, request *mcp.CallToolRequest, params *TokenCreateParams) (*mcp.CallToolResult, any, error) {
+var tokenActions = []string{"create", "list", "revoke"}
+
+func (s *Server) handleToken(ctx context.Context, request *mcp.CallToolRequest, params *TokenParams) (*mcp.CallToolResult, any, error) {
+	if params.Action == "" {
+		return nil, nil, missingActionError("token", tokenActions)
+	}
+
+	switch params.Action {
+	case "create":
+		return s.handleTokenCreate(ctx, request, params)
+	case "list":
+		return s.handleTokenList(ctx, request, params)
+	case "revoke":
+		return s.handleTokenRevoke(ctx, request, params)
+	default:
+		return nil, nil, actionError("token", params.Action, tokenActions)
+	}
+}
+
+func (s *Server) handleTokenCreate(ctx context.Context, request *mcp.CallToolRequest, params *TokenParams) (*mcp.CallToolResult, any, error) {
 	authCtx, err := requireAdmin(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -30,7 +51,7 @@ func (s *Server) handleTokenCreate(ctx context.Context, request *mcp.CallToolReq
 	}
 
 	if !isValidScope(params.Scope) {
-		return nil, nil, fmt.Errorf("invalid scope '%s'. Valid scopes: admin, read-only, project:<uuid>", params.Scope)
+		return nil, nil, fmt.Errorf("invalid scope '%s'. Valid scopes: admin, admin:ro, project:<uuid>, project:<uuid>:ro", params.Scope)
 	}
 
 	callerTokenID, callerScope := getTokenInfo(authCtx)
@@ -61,9 +82,7 @@ func (s *Server) handleTokenCreate(ctx context.Context, request *mcp.CallToolReq
 	}, nil, nil
 }
 
-type TokenListParams struct{}
-
-func (s *Server) handleTokenList(ctx context.Context, request *mcp.CallToolRequest, params *TokenListParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleTokenList(ctx context.Context, request *mcp.CallToolRequest, params *TokenParams) (*mcp.CallToolResult, any, error) {
 	if _, err := requireAdmin(ctx); err != nil {
 		return nil, nil, err
 	}
@@ -101,11 +120,7 @@ func (s *Server) handleTokenList(ctx context.Context, request *mcp.CallToolReque
 	}, nil, nil
 }
 
-type TokenRevokeParams struct {
-	TokenID string `json:"token_id"`
-}
-
-func (s *Server) handleTokenRevoke(ctx context.Context, request *mcp.CallToolRequest, params *TokenRevokeParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleTokenRevoke(ctx context.Context, request *mcp.CallToolRequest, params *TokenParams) (*mcp.CallToolResult, any, error) {
 	authCtx, err := requireAdmin(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -135,8 +150,6 @@ func (s *Server) handleTokenRevoke(ctx context.Context, request *mcp.CallToolReq
 		},
 	}, nil, nil
 }
-
-// Helper functions for token handlers
 
 func isValidScope(scope string) bool {
 	if scope == auth.ScopeAdmin || scope == auth.ScopeAdminRO {

@@ -100,9 +100,7 @@ type StartOptions struct {
 
 	ToolsAllowed       []string // Whitelist of allowed tools
 	ToolsDisallowed    []string // Blacklist of disallowed tools
-	AppendSystemPrompt string   // Additional system prompt to append
-
-	WorkspaceIsolation bool // When true, workingDir is /workspace/<uuid> instead of /workspace/workspaces/<uuid>
+	WorkspaceIsolation bool     // When true, workingDir is /workspace/<uuid> instead of /workspace/workspaces/<uuid>
 
 	RuntimeOverride interface{} // agent.Runtime - use this runtime instead of manager's default (interface to avoid circular import)
 }

@@ -12,13 +12,37 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Container Operation Handlers
+// ContainerParams is the params struct for the container tool
+type ContainerParams struct {
+	Action string `json:"action"` // Required: start, stop, logs, exec
 
-type SpawnContainerParams struct {
-	ProjectID string `json:"project_id"`
+	ProjectID  string `json:"project_id,omitempty"`
+	Command    string `json:"command,omitempty"`
+	WorkingDir string `json:"working_dir,omitempty"`
 }
 
-func (s *Server) handleSpawnContainer(ctx context.Context, request *mcp.CallToolRequest, params *SpawnContainerParams) (*mcp.CallToolResult, any, error) {
+var containerActions = []string{"start", "stop", "logs", "exec"}
+
+func (s *Server) handleContainer(ctx context.Context, request *mcp.CallToolRequest, params *ContainerParams) (*mcp.CallToolResult, any, error) {
+	if params.Action == "" {
+		return nil, nil, missingActionError("container", containerActions)
+	}
+
+	switch params.Action {
+	case "start":
+		return s.handleContainerStart(ctx, request, params)
+	case "stop":
+		return s.handleContainerStop(ctx, request, params)
+	case "logs":
+		return s.handleContainerLogs(ctx, request, params)
+	case "exec":
+		return s.handleContainerExec(ctx, request, params)
+	default:
+		return nil, nil, actionError("container", params.Action, containerActions)
+	}
+}
+
+func (s *Server) handleContainerStart(ctx context.Context, request *mcp.CallToolRequest, params *ContainerParams) (*mcp.CallToolResult, any, error) {
 	if params.ProjectID == "" {
 		return nil, nil, fmt.Errorf("project_id is required")
 	}
@@ -51,7 +75,6 @@ func (s *Server) handleSpawnContainer(ctx context.Context, request *mcp.CallTool
 	result := "✅ Container started successfully\n\n"
 	result += fmt.Sprintf("Container ID: %s\n", containerID[:12])
 	result += fmt.Sprintf("Project: %s\n", params.ProjectID)
-	result += "Mode: long-lived (use container_stop to stop)\n"
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
@@ -60,13 +83,7 @@ func (s *Server) handleSpawnContainer(ctx context.Context, request *mcp.CallTool
 	}, nil, nil
 }
 
-type ExecCommandParams struct {
-	ProjectID  string `json:"project_id"`
-	Command    string `json:"command"`
-	WorkingDir string `json:"working_dir,omitempty"`
-}
-
-func (s *Server) handleExecCommand(ctx context.Context, request *mcp.CallToolRequest, params *ExecCommandParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleContainerExec(ctx context.Context, request *mcp.CallToolRequest, params *ContainerParams) (*mcp.CallToolResult, any, error) {
 	if params.ProjectID == "" {
 		return nil, nil, fmt.Errorf("project_id is required")
 	}
@@ -107,11 +124,7 @@ func (s *Server) handleExecCommand(ctx context.Context, request *mcp.CallToolReq
 	}, nil, nil
 }
 
-type StopContainerParams struct {
-	ProjectID string `json:"project_id"`
-}
-
-func (s *Server) handleStopContainer(ctx context.Context, request *mcp.CallToolRequest, params *StopContainerParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleContainerStop(ctx context.Context, request *mcp.CallToolRequest, params *ContainerParams) (*mcp.CallToolResult, any, error) {
 	if params.ProjectID == "" {
 		return nil, nil, fmt.Errorf("project_id is required")
 	}
@@ -134,11 +147,7 @@ func (s *Server) handleStopContainer(ctx context.Context, request *mcp.CallToolR
 	}, nil, nil
 }
 
-type GetLogsParams struct {
-	ProjectID string `json:"project_id"`
-}
-
-func (s *Server) handleGetLogs(ctx context.Context, request *mcp.CallToolRequest, params *GetLogsParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleContainerLogs(ctx context.Context, request *mcp.CallToolRequest, params *ContainerParams) (*mcp.CallToolResult, any, error) {
 	if params.ProjectID == "" {
 		return nil, nil, fmt.Errorf("project_id is required")
 	}
@@ -163,10 +172,7 @@ type ContainerRefreshParams struct {
 	ContainerType string `json:"container_type,omitempty"`
 }
 
-// handleContainerRefresh pulls the latest image and restarts the container
-// Fails if there are active sessions for the project
 func (s *Server) handleContainerRefresh(ctx context.Context, request *mcp.CallToolRequest, params *ContainerRefreshParams) (*mcp.CallToolResult, any, error) {
-	// Require project_id or container_type
 	if params.ProjectID == "" && params.ContainerType == "" {
 		return nil, nil, fmt.Errorf("either project_id or container_type is required")
 	}
@@ -175,7 +181,6 @@ func (s *Server) handleContainerRefresh(ctx context.Context, request *mcp.CallTo
 		return nil, nil, fmt.Errorf("image manager not configured")
 	}
 
-	// If container_type is specified, just ensure image exists (pull if needed)
 	if params.ContainerType != "" {
 		if !s.imageManager.IsValidType(params.ContainerType) {
 			return nil, nil, fmt.Errorf("invalid container_type: %s (valid types: %v)", params.ContainerType, s.imageManager.ValidTypes())
@@ -183,7 +188,6 @@ func (s *Server) handleContainerRefresh(ctx context.Context, request *mcp.CallTo
 
 		imageName, _ := s.imageManager.GetImageName(params.ContainerType)
 
-		// Pull the image
 		logger.Info("Refreshing container type %s (image: %s)", params.ContainerType, imageName)
 		if err := s.runtime.Pull(ctx, imageName); err != nil {
 			return nil, nil, fmt.Errorf("failed to pull image %s: %w", imageName, err)
@@ -196,30 +200,25 @@ func (s *Server) handleContainerRefresh(ctx context.Context, request *mcp.CallTo
 		}, nil, nil
 	}
 
-	// Project-specific refresh
 	proj, err := s.projectMgr.Get(params.ProjectID)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Check for active sessions - fail if any exist
 	if s.activeSessions.CountByProject(params.ProjectID) > 0 {
 		return nil, nil, fmt.Errorf("cannot refresh container: project has active sessions (stop sessions first)")
 	}
 
 	containerName := fmt.Sprintf("oubliette-%s", params.ProjectID[:8])
 
-	// Pull the image
 	logger.Info("Refreshing container for project %s (image: %s)", params.ProjectID, proj.ImageName)
 	if err := s.runtime.Pull(ctx, proj.ImageName); err != nil {
 		return nil, nil, fmt.Errorf("failed to pull image %s: %w", proj.ImageName, err)
 	}
 
-	// Stop and remove old container
 	_ = s.runtime.Stop(ctx, containerName)
 	_ = s.runtime.Remove(ctx, containerName, true)
 
-	// Start fresh container
 	containerID, err := s.createAndStartContainer(ctx, containerName, proj.ImageName, params.ProjectID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to start refreshed container: %w", err)
@@ -232,15 +231,11 @@ func (s *Server) handleContainerRefresh(ctx context.Context, request *mcp.CallTo
 	}, nil, nil
 }
 
-// createAndStartContainer creates and starts a container for a project
 func (s *Server) createAndStartContainer(ctx context.Context, containerName, imageName, projectName string) (string, error) {
-	// Check if image exists
 	exists, err := s.runtime.ImageExists(ctx, imageName)
 	if err != nil {
 		logger.Error("Failed to check image %s: %v", imageName, err)
-		// Continue anyway - the create will fail if image truly doesn't exist
 	} else if !exists {
-		// Try to pull the image
 		logger.Info("Image %s not found, pulling...", imageName)
 		if err := s.runtime.Pull(ctx, imageName); err != nil {
 			return "", fmt.Errorf("failed to pull image %s: %w", imageName, err)
@@ -248,13 +243,11 @@ func (s *Server) createAndStartContainer(ctx context.Context, containerName, ima
 		logger.Info("Pulled image %s successfully", imageName)
 	}
 
-	// Remove any existing container with the same name
 	_ = s.runtime.Stop(ctx, containerName)
 	_ = s.runtime.Remove(ctx, containerName, true)
 
 	projectDir := s.projectMgr.GetProjectDir(projectName)
 
-	// Ensure directories exist
 	_ = os.MkdirAll(filepath.Join(projectDir, "cache", "npm"), 0o755)
 	_ = os.MkdirAll(filepath.Join(projectDir, "cache", "pip"), 0o755)
 	_ = os.MkdirAll(filepath.Join(projectDir, "cache", "maven"), 0o755)
@@ -262,36 +255,26 @@ func (s *Server) createAndStartContainer(ctx context.Context, containerName, ima
 	_ = os.MkdirAll(filepath.Join(projectDir, "history"), 0o755)
 	_ = os.MkdirAll(filepath.Join(projectDir, "ssh"), 0o755)
 
-	// Ensure socket directory exists on host
 	if err := EnsureSocketDir(projectName); err != nil {
 		logger.Error("Failed to create socket directory: %v", err)
 		return "", fmt.Errorf("failed to create socket directory: %w", err)
 	}
 
-	// Get project to check workspace isolation setting
 	proj, err := s.projectMgr.Get(projectName)
 	if err != nil {
 		return "", fmt.Errorf("failed to get project: %w", err)
 	}
 
-	// Determine workspace mount based on isolation setting
 	var workspaceSource string
 	var additionalMounts []container.Mount
 	if proj.WorkspaceIsolation {
-		// Isolated mode: mount only workspaces directory
-		// Sessions will have workingDir /workspace/<workspace_id>
 		workspaceSource = filepath.Join(projectDir, "workspaces")
 		_ = os.MkdirAll(workspaceSource, 0o755)
 
-		// Add read-only mounts for protected paths
-		// Note: Protected paths are mounted from the project root as shared read-only resources
-		// They appear at /workspace/.protected/<path> and workspaces can reference them
 		if len(proj.ProtectedPaths) > 0 {
 			for _, protPath := range proj.ProtectedPaths {
 				srcPath := filepath.Join(projectDir, protPath)
-				// Validate path exists before adding mount (skip missing)
 				if _, err := os.Stat(srcPath); err == nil {
-					// Mount to a .protected directory to make them accessible read-only
 					targetPath := filepath.Join("/workspace/.protected", protPath)
 					additionalMounts = append(additionalMounts, container.Mount{
 						Type:     container.MountTypeBind,
@@ -306,12 +289,9 @@ func (s *Server) createAndStartContainer(ctx context.Context, containerName, ima
 			}
 		}
 	} else {
-		// Non-isolated mode: mount full project directory
-		// Sessions will have workingDir /workspace/workspaces/<workspace_id>
 		workspaceSource = projectDir
 	}
 
-	// Build mount list
 	mounts := []container.Mount{
 		{Type: container.MountTypeBind, Source: workspaceSource, Target: "/workspace"},
 		{Type: container.MountTypeBind, Source: filepath.Join(projectDir, "cache", "npm"), Target: "/home/gogol/.npm"},
@@ -322,10 +302,6 @@ func (s *Server) createAndStartContainer(ctx context.Context, containerName, ima
 		{Type: container.MountTypeBind, Source: filepath.Join(projectDir, "ssh"), Target: "/home/gogol/.ssh"},
 	}
 
-	// Note: opencode.json is inside projectDir which is mounted at /workspace.
-	// The .opencode/ directory is also inside the project dir.
-
-	// Add protected path mounts (read-only)
 	mounts = append(mounts, additionalMounts...)
 
 	cfg := container.CreateConfig{
@@ -353,7 +329,6 @@ func (s *Server) createAndStartContainer(ctx context.Context, containerName, ima
 		CPUs:        s.containerCPUs,
 	}
 
-	// Inject provider credentials from unified registry
 	if s.credentials != nil {
 		if provCred, ok := s.credentials.GetDefaultProviderCredential(); ok && provCred.APIKey != "" {
 			envVar := config.ProviderEnvVar(provCred.Provider)

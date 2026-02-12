@@ -41,12 +41,7 @@ func (r *Runtime) Execute(ctx context.Context, req *agent.ExecuteRequest) (*agen
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 
-	prompt := req.Prompt
-	if req.SystemPrompt != "" {
-		prompt = fmt.Sprintf("%s\n\n---\n\n%s", req.SystemPrompt, req.Prompt)
-	}
-
-	result, err := server.SendMessage(ctx, sessionID, prompt)
+	result, err := server.SendMessage(ctx, sessionID, req.Prompt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send message: %w", err)
 	}
@@ -79,12 +74,8 @@ func (r *Runtime) ExecuteStreaming(ctx context.Context, req *agent.ExecuteReques
 		return nil, fmt.Errorf("failed to create executor: %w", err)
 	}
 
-	prompt := req.Prompt
-	if req.SystemPrompt != "" {
-		prompt = fmt.Sprintf("%s\n\n---\n\n%s", req.SystemPrompt, req.Prompt)
-	}
-	if prompt != "" {
-		if err := executor.SendMessage(prompt); err != nil {
+	if req.Prompt != "" {
+		if err := executor.SendMessage(req.Prompt); err != nil {
 			_ = executor.Close()
 			return nil, fmt.Errorf("failed to send initial message: %w", err)
 		}

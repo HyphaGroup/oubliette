@@ -204,29 +204,9 @@ func (s *Server) spawnAndRegisterSession(ctx context.Context, projectID, contain
 }
 
 // SpawnParams unifies parameters for both prime and child gogol spawning
-type SpawnParams struct {
-	ProjectID          string                 `json:"project_id,omitempty"`
-	Prompt             string                 `json:"prompt"`
-	Context            map[string]interface{} `json:"context,omitempty"`
-	AppendSystemPrompt string                 `json:"append_system_prompt,omitempty"`
-
-	WorkspaceID     string `json:"workspace_id,omitempty"`
-	CreateWorkspace bool   `json:"create_workspace,omitempty"`
-	ExternalID      string `json:"external_id,omitempty"`
-	Source          string `json:"source,omitempty"`
-
-	Model          string `json:"model,omitempty"`
-	AutonomyLevel  string `json:"autonomy_level,omitempty"`
-	ReasoningLevel string `json:"reasoning_level,omitempty"`
-
-	ToolsAllowed    []string `json:"tools_allowed,omitempty"`
-	ToolsDisallowed []string `json:"tools_disallowed,omitempty"`
-	NewSession      bool     `json:"new_session,omitempty"`
-}
-
-func (s *Server) handleSpawn(ctx context.Context, request *mcp.CallToolRequest, params *SpawnParams) (*mcp.CallToolResult, any, error) {
-	if params.Prompt == "" {
-		return nil, nil, fmt.Errorf("prompt is required")
+func (s *Server) handleSpawn(ctx context.Context, request *mcp.CallToolRequest, params *SessionParams) (*mcp.CallToolResult, any, error) {
+	if params.Message == "" {
+		return nil, nil, fmt.Errorf("message is required")
 	}
 
 	mcpCtx := ExtractMCPContext(ctx)
@@ -238,7 +218,7 @@ func (s *Server) handleSpawn(ctx context.Context, request *mcp.CallToolRequest, 
 	return s.handleSpawnChild(ctx, mcpCtx, params)
 }
 
-func (s *Server) handleSpawnPrime(ctx context.Context, request *mcp.CallToolRequest, params *SpawnParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleSpawnPrime(ctx context.Context, request *mcp.CallToolRequest, params *SessionParams) (*mcp.CallToolResult, any, error) {
 	if params.ProjectID == "" {
 		return nil, nil, fmt.Errorf("project_id is required for prime gogol")
 	}
@@ -268,7 +248,6 @@ func (s *Server) handleSpawnPrime(ctx context.Context, request *mcp.CallToolRequ
 		WorkspaceID:        env.workspaceID,
 		ToolsAllowed:       params.ToolsAllowed,
 		ToolsDisallowed:    params.ToolsDisallowed,
-		AppendSystemPrompt: params.AppendSystemPrompt,
 		WorkspaceIsolation: env.project.WorkspaceIsolation,
 		RuntimeOverride:    s.agentRuntime,
 	}
@@ -282,7 +261,7 @@ func (s *Server) handleSpawnPrime(ctx context.Context, request *mcp.CallToolRequ
 		existingSession, err := s.sessionMgr.GetLatestSession(params.ProjectID)
 		if err == nil && existingSession != nil && existingSession.RuntimeSessionID != "" {
 			logger.Info("Resuming existing session %s for project %s", existingSession.SessionID, params.ProjectID)
-			resumedSess, executor, resumeErr := s.sessionMgr.ResumeBidirectionalSession(ctx, existingSession, env.containerName, params.Prompt, opts)
+			resumedSess, executor, resumeErr := s.sessionMgr.ResumeBidirectionalSession(ctx, existingSession, env.containerName, params.Message, opts)
 			if resumeErr != nil {
 				logger.Error("Failed to resume session, creating new: %v", resumeErr)
 			} else {
@@ -310,7 +289,7 @@ func (s *Server) handleSpawnPrime(ctx context.Context, request *mcp.CallToolRequ
 	if activeSess == nil {
 		logger.Info("Creating new session for project %s", params.ProjectID)
 		var err error
-		sess, activeSess, err = s.spawnAndRegisterSession(ctx, params.ProjectID, env.containerName, env.workspaceID, params.Prompt, opts, nil)
+		sess, activeSess, err = s.spawnAndRegisterSession(ctx, params.ProjectID, env.containerName, env.workspaceID, params.Message, opts, nil)
 		if err != nil {
 			logger.Error("Failed to spawn gogol for %s: %v", params.ProjectID, err)
 			return nil, nil, err
@@ -350,7 +329,7 @@ func (s *Server) handleSpawnPrime(ctx context.Context, request *mcp.CallToolRequ
 	}, nil, nil
 }
 
-func (s *Server) handleSpawnChild(ctx context.Context, mcpCtx MCPContext, params *SpawnParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleSpawnChild(ctx context.Context, mcpCtx MCPContext, params *SessionParams) (*mcp.CallToolResult, any, error) {
 	logger.Info("Spawning child session from parent: %s", mcpCtx.SessionID)
 
 	parentSession, err := s.sessionMgr.Load(mcpCtx.SessionID)
@@ -401,25 +380,22 @@ func (s *Server) handleSpawnChild(ctx context.Context, mcpCtx MCPContext, params
 		}
 	}
 
-	systemPrompt := fmt.Sprintf(`You are a child session at depth %d/%d.
+	// Build the full prompt with context preamble inlined
+	prompt := fmt.Sprintf(`You are a child session at depth %d/%d.
 Exploration ID: %s
 Parent session: %s
 
-Your task: %s
-
-When complete, write results to: /workspace/.rlm-context/%s_results.json
+When complete, write results to: /workspace/.rlm-context/{{SESSION_ID}}_results.json
 The .rlm-context/ directory is shared with your parent and siblings for result aggregation.
-`,
+
+---
+
+%s`,
 		childDepth, maxDepth,
 		explorationID,
 		mcpCtx.SessionID,
-		params.Prompt,
-		"{{SESSION_ID}}",
+		params.Message,
 	)
-
-	if params.AppendSystemPrompt != "" {
-		systemPrompt += "\n" + params.AppendSystemPrompt
-	}
 
 	// Use project model as default if not specified in params
 	model := params.Model
@@ -428,18 +404,16 @@ The .rlm-context/ directory is shared with your parent and siblings for result a
 	}
 
 	opts := session.StartOptions{
-		Model:          model,
-		AutonomyLevel:  params.AutonomyLevel,
-		ReasoningLevel: params.ReasoningLevel,
-
+		Model:              model,
+		AutonomyLevel:      params.AutonomyLevel,
+		ReasoningLevel:     params.ReasoningLevel,
 		ToolsAllowed:       params.ToolsAllowed,
 		ToolsDisallowed:    params.ToolsDisallowed,
-		AppendSystemPrompt: systemPrompt,
 		WorkspaceID:        parentSession.WorkspaceID,
 		WorkspaceIsolation: proj.WorkspaceIsolation,
 	}
 
-	childSession, err := s.sessionMgr.Create(ctx, parentSession.ProjectID, containerName, params.Prompt, opts)
+	childSession, err := s.sessionMgr.Create(ctx, parentSession.ProjectID, containerName, prompt, opts)
 	if err != nil {
 		logger.Error("Failed to create child session: %v", err)
 		return nil, nil, fmt.Errorf("failed to create child session: %w", err)
@@ -489,11 +463,7 @@ The .rlm-context/ directory is shared with your parent and siblings for result a
 	}, nil, nil
 }
 
-type GetSessionParams struct {
-	SessionID string `json:"session_id"`
-}
-
-func (s *Server) handleGetSession(ctx context.Context, request *mcp.CallToolRequest, params *GetSessionParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleGetSession(ctx context.Context, request *mcp.CallToolRequest, params *SessionParams) (*mcp.CallToolResult, any, error) {
 	if params.SessionID == "" {
 		return nil, nil, fmt.Errorf("session_id is required")
 	}
@@ -528,12 +498,7 @@ func (s *Server) handleGetSession(ctx context.Context, request *mcp.CallToolRequ
 	}, nil, nil
 }
 
-type ListSessionsParams struct {
-	ProjectID string `json:"project_id"`
-	Status    string `json:"status,omitempty"`
-}
-
-func (s *Server) handleListSessions(ctx context.Context, request *mcp.CallToolRequest, params *ListSessionsParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleListSessions(ctx context.Context, request *mcp.CallToolRequest, params *SessionParams) (*mcp.CallToolResult, any, error) {
 	if params.ProjectID == "" {
 		return nil, nil, fmt.Errorf("project_id is required")
 	}
@@ -576,11 +541,7 @@ func (s *Server) handleListSessions(ctx context.Context, request *mcp.CallToolRe
 	}, nil, nil
 }
 
-type EndSessionParams struct {
-	SessionID string `json:"session_id"`
-}
-
-func (s *Server) handleEndSession(ctx context.Context, request *mcp.CallToolRequest, params *EndSessionParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleEndSession(ctx context.Context, request *mcp.CallToolRequest, params *SessionParams) (*mcp.CallToolResult, any, error) {
 	if params.SessionID == "" {
 		return nil, nil, fmt.Errorf("session_id is required")
 	}
@@ -609,30 +570,6 @@ func minInt(a, b int) int {
 }
 
 // SendMessageParams for the unified session_message tool
-type SendMessageParams struct {
-	ProjectID       string                 `json:"project_id"`
-	Message         string                 `json:"message"`
-	WorkspaceID     string                 `json:"workspace_id,omitempty"` // Optional: defaults to project's default workspace
-	CreateWorkspace bool                   `json:"create_workspace,omitempty"`
-	ExternalID      string                 `json:"external_id,omitempty"`
-	Source          string                 `json:"source,omitempty"`
-	Context         map[string]interface{} `json:"context,omitempty"`
-
-	Model              string   `json:"model,omitempty"`
-	AutonomyLevel      string   `json:"autonomy_level,omitempty"`
-	ReasoningLevel     string   `json:"reasoning_level,omitempty"`
-	AppendSystemPrompt string   `json:"append_system_prompt,omitempty"`
-	ToolsAllowed       []string `json:"tools_allowed,omitempty"`
-	ToolsDisallowed    []string `json:"tools_disallowed,omitempty"`
-
-	// Caller tool relay - allows caller to expose tools to the agent
-	CallerID    string                         `json:"caller_id,omitempty"`
-	CallerTools []session.CallerToolDefinition `json:"caller_tools,omitempty"`
-
-	// File attachments
-	Attachments []Attachment `json:"attachments,omitempty"`
-}
-
 // Attachment represents a file attachment sent with a message
 type Attachment struct {
 	ID          string `json:"id,omitempty"`
@@ -650,7 +587,7 @@ type SendMessageResult struct {
 	LastEventIndex   int    `json:"last_event_index"`
 }
 
-func (s *Server) handleSendMessage(ctx context.Context, request *mcp.CallToolRequest, params *SendMessageParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleSendMessage(ctx context.Context, request *mcp.CallToolRequest, params *SessionParams) (*mcp.CallToolResult, any, error) {
 	if params.ProjectID == "" {
 		return nil, nil, fmt.Errorf("project_id is required")
 	}
@@ -742,7 +679,6 @@ func (s *Server) handleSendMessage(ctx context.Context, request *mcp.CallToolReq
 		WorkspaceID:        env.workspaceID,
 		ToolsAllowed:       params.ToolsAllowed,
 		ToolsDisallowed:    params.ToolsDisallowed,
-		AppendSystemPrompt: params.AppendSystemPrompt,
 		WorkspaceIsolation: env.project.WorkspaceIsolation,
 		RuntimeOverride:    s.agentRuntime,
 	}
@@ -774,13 +710,6 @@ func (s *Server) handleSendMessage(ctx context.Context, request *mcp.CallToolReq
 }
 
 // SessionEventsParams for streaming events
-type SessionEventsParams struct {
-	SessionID       string `json:"session_id"`
-	SinceIndex      *int   `json:"since_index,omitempty"`
-	MaxEvents       *int   `json:"max_events,omitempty"`
-	IncludeChildren bool   `json:"include_children,omitempty"` // Include events from child sessions
-}
-
 type SessionEventsResult struct {
 	SessionID     string             `json:"session_id"`
 	Status        string             `json:"status"`
@@ -801,7 +730,7 @@ type SessionEventItem struct {
 	SessionID string `json:"session_id,omitempty"` // Set when include_children is true
 }
 
-func (s *Server) handleSessionEvents(ctx context.Context, request *mcp.CallToolRequest, params *SessionEventsParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleSessionEvents(ctx context.Context, request *mcp.CallToolRequest, params *SessionParams) (*mcp.CallToolResult, any, error) {
 	if params.SessionID == "" {
 		return nil, nil, fmt.Errorf("session_id is required")
 	}
@@ -1028,12 +957,7 @@ func (s *Server) handleCallerToolResponse(ctx context.Context, request *mcp.Call
 }
 
 // SessionCleanupParams for the session_cleanup tool
-type SessionCleanupParams struct {
-	ProjectID   string `json:"project_id,omitempty"`
-	MaxAgeHours *int   `json:"max_age_hours,omitempty"`
-}
-
-func (s *Server) handleSessionCleanup(ctx context.Context, request *mcp.CallToolRequest, params *SessionCleanupParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleSessionCleanup(ctx context.Context, request *mcp.CallToolRequest, params *SessionParams) (*mcp.CallToolResult, any, error) {
 	// Require write access
 	authCtx, err := requireAuth(ctx)
 	if err != nil {

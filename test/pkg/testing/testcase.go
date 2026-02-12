@@ -24,7 +24,7 @@ type TestCase struct {
 type TestContext struct {
 	Client       *client.MCPClient
 	Assertions   *Assertions
-	ProjectID  string
+	ProjectID    string
 	SessionID    string
 	CreatedProjs []string // Track projects for cleanup
 	Logs         []string
@@ -214,7 +214,7 @@ func (tc *TestContext) StartTask(projectName, prompt string) (string, error) {
 	tc.Log("Starting session task for project: %s", projectName)
 	params := map[string]interface{}{
 		"project_id": projectName,
-		"prompt":       prompt,
+		"prompt":     prompt,
 	}
 
 	result, err := tc.Client.InvokeTool("session_spawn", params)
@@ -232,7 +232,7 @@ func (tc *TestContext) StartTask(projectName, prompt string) (string, error) {
 	if sessionID == "" {
 		return "", fmt.Errorf("failed to extract session ID from response: %s", content)
 	}
-	
+
 	tc.SessionID = sessionID
 	tc.Log("Session spawned: %s", tc.SessionID)
 
@@ -263,13 +263,13 @@ func ExtractSessionID(content string) string {
 
 // TestResult represents the outcome of a test execution
 type TestResult struct {
-	TestName    string
-	Passed      bool
-	Duration    time.Duration
-	Error       error
-	Logs        []string
-	Assertions  int
-	FailedAt    string // Which phase failed: "setup", "execute", "teardown"
+	TestName   string
+	Passed     bool
+	Duration   time.Duration
+	Error      error
+	Logs       []string
+	Assertions int
+	FailedAt   string // Which phase failed: "setup", "execute", "teardown"
 }
 
 // Run executes the test case and returns the result

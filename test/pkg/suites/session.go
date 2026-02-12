@@ -272,4 +272,3 @@ func GetSessionTests() []*testpkg.TestCase {
 		},
 	}
 }
-

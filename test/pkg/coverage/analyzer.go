@@ -23,11 +23,11 @@ type ItemCoverage struct {
 
 // CategoryCoverage represents coverage for a category (MCP, Manager, CLI)
 type CategoryCoverage struct {
-	Items       map[string]*ItemCoverage
-	Total       int
-	Tested      int
-	Untested    int
-	Percent     float64
+	Items        map[string]*ItemCoverage
+	Total        int
+	Tested       int
+	Untested     int
+	Percent      float64
 	UntestedList []string
 }
 
@@ -50,9 +50,9 @@ type CoverageReport struct {
 	CLI     *CategoryCoverage
 
 	// Overall coverage
-	TotalItems      int
-	TestedItems     int
-	OverallPercent  float64
+	TotalItems     int
+	TestedItems    int
+	OverallPercent float64
 }
 
 // Analyzer analyzes test coverage for external interfaces
@@ -154,8 +154,6 @@ func (a *Analyzer) analyzeMCPTools() (*CategoryCoverage, error) {
 	return coverage, nil
 }
 
-
-
 // analyzeCLIBinaries discovers and analyzes CLI binary coverage
 func (a *Analyzer) analyzeCLIBinaries() (*CategoryCoverage, error) {
 	binaries, err := a.discoverCLIBinaries()
@@ -184,8 +182,6 @@ func (a *Analyzer) analyzeCLIBinaries() (*CategoryCoverage, error) {
 	a.calculateCategoryStats(coverage)
 	return coverage, nil
 }
-
-
 
 // discoverCLIBinaries finds oubliette-* executables in repo root
 func (a *Analyzer) discoverCLIBinaries() ([]string, error) {

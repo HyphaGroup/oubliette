@@ -1,8 +1,8 @@
 package suites
 
 import (
-	"fmt"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	testpkg "github.com/HyphaGroup/oubliette/test/pkg/testing"
@@ -18,7 +18,7 @@ func GetMessagingTests() []*testpkg.TestCase {
 			Timeout:     120 * time.Second,
 			Execute: func(ctx *testpkg.TestContext) error {
 				projName := fmt.Sprintf("test-messaging-send-%d", time.Now().UnixNano())
-				
+
 				// Pre-cleanup
 				ctx.PreTestCleanup(projName)
 
@@ -87,7 +87,7 @@ func GetMessagingTests() []*testpkg.TestCase {
 			Timeout:     120 * time.Second,
 			Execute: func(ctx *testpkg.TestContext) error {
 				projName := fmt.Sprintf("test-messaging-feedback-%d", time.Now().UnixNano())
-				
+
 				// Pre-cleanup
 				ctx.PreTestCleanup(projName)
 
@@ -154,7 +154,7 @@ func GetMessagingTests() []*testpkg.TestCase {
 			Timeout:     90 * time.Second,
 			Execute: func(ctx *testpkg.TestContext) error {
 				projName := fmt.Sprintf("test-messaging-error-%d", time.Now().UnixNano())
-				
+
 				// Pre-cleanup
 				ctx.PreTestCleanup(projName)
 
@@ -170,7 +170,7 @@ func GetMessagingTests() []*testpkg.TestCase {
 				ctx.Log("Starting non-interactive session task")
 				startParams := map[string]interface{}{
 					"project_id": projID,
-					"prompt":       "Simple task",
+					"prompt":     "Simple task",
 					// interactive: false (default)
 				}
 

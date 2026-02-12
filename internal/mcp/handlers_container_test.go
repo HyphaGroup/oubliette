@@ -4,62 +4,35 @@ import (
 	"testing"
 )
 
-func TestSpawnContainerParams(t *testing.T) {
-	params := SpawnContainerParams{
+func TestContainerParams(t *testing.T) {
+	params := ContainerParams{
+		Action:    "exec",
 		ProjectID: "550e8400-e29b-41d4-a716-446655440000",
+		Command:   "ls -la",
 	}
 
-	if params.ProjectID != "550e8400-e29b-41d4-a716-446655440000" {
-		t.Errorf("ProjectID = %q, want UUID", params.ProjectID)
+	if params.Action != "exec" {
+		t.Errorf("Action = %q, want %q", params.Action, "exec")
 	}
-}
-
-func TestExecCommandParams(t *testing.T) {
-	params := ExecCommandParams{
-		ProjectID:  "550e8400-e29b-41d4-a716-446655440000",
-		Command:    "ls -la",
-		WorkingDir: "/workspace",
-	}
-
 	if params.ProjectID != "550e8400-e29b-41d4-a716-446655440000" {
 		t.Errorf("ProjectID = %q, want UUID", params.ProjectID)
 	}
 	if params.Command != "ls -la" {
 		t.Errorf("Command = %q, want %q", params.Command, "ls -la")
 	}
-	if params.WorkingDir != "/workspace" {
-		t.Errorf("WorkingDir = %q, want %q", params.WorkingDir, "/workspace")
-	}
 }
 
-func TestExecCommandParams_Minimal(t *testing.T) {
-	params := ExecCommandParams{
+func TestContainerParams_Minimal(t *testing.T) {
+	params := ContainerParams{
+		Action:    "start",
 		ProjectID: "project-1",
-		Command:   "echo hello",
 	}
 
 	if params.WorkingDir != "" {
 		t.Errorf("WorkingDir = %q, want empty", params.WorkingDir)
 	}
-}
-
-func TestStopContainerParams(t *testing.T) {
-	params := StopContainerParams{
-		ProjectID: "550e8400-e29b-41d4-a716-446655440000",
-	}
-
-	if params.ProjectID != "550e8400-e29b-41d4-a716-446655440000" {
-		t.Errorf("ProjectID = %q, want UUID", params.ProjectID)
-	}
-}
-
-func TestGetLogsParams(t *testing.T) {
-	params := GetLogsParams{
-		ProjectID: "550e8400-e29b-41d4-a716-446655440000",
-	}
-
-	if params.ProjectID != "550e8400-e29b-41d4-a716-446655440000" {
-		t.Errorf("ProjectID = %q, want UUID", params.ProjectID)
+	if params.Command != "" {
+		t.Errorf("Command = %q, want empty", params.Command)
 	}
 }
 

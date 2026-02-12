@@ -7,7 +7,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// SessionParams is the unified params struct for the session tool
+// SessionParams is the params struct for the session tool
 type SessionParams struct {
 	Action string `json:"action"` // Required: spawn, message, get, list, end, events, cleanup
 
@@ -15,23 +15,21 @@ type SessionParams struct {
 	ProjectID   string `json:"project_id,omitempty"`
 	SessionID   string `json:"session_id,omitempty"`
 	WorkspaceID string `json:"workspace_id,omitempty"`
+	Message     string `json:"message,omitempty"`
 
-	// For spawn
-	Prompt             string         `json:"prompt,omitempty"`
-	CreateWorkspace    bool           `json:"create_workspace,omitempty"`
-	NewSession         bool           `json:"new_session,omitempty"`
-	ExternalID         string         `json:"external_id,omitempty"`
-	Source             string         `json:"source,omitempty"`
-	Context            map[string]any `json:"context,omitempty"`
-	Model              string         `json:"model,omitempty"`
-	AutonomyLevel      string         `json:"autonomy_level,omitempty"`
-	ReasoningLevel     string         `json:"reasoning_level,omitempty"`
-	ToolsAllowed       []string       `json:"tools_allowed,omitempty"`
-	ToolsDisallowed    []string       `json:"tools_disallowed,omitempty"`
-	AppendSystemPrompt string         `json:"append_system_prompt,omitempty"`
+	// For spawn and message
+	CreateWorkspace bool           `json:"create_workspace,omitempty"`
+	NewSession      bool           `json:"new_session,omitempty"`
+	ExternalID      string         `json:"external_id,omitempty"`
+	Source          string         `json:"source,omitempty"`
+	Context         map[string]any `json:"context,omitempty"`
+	Model           string         `json:"model,omitempty"`
+	AutonomyLevel   string         `json:"autonomy_level,omitempty"`
+	ReasoningLevel  string         `json:"reasoning_level,omitempty"`
+	ToolsAllowed    []string       `json:"tools_allowed,omitempty"`
+	ToolsDisallowed []string       `json:"tools_disallowed,omitempty"`
 
-	// For message
-	Message     string                         `json:"message,omitempty"`
+	// For message only
 	Attachments []Attachment                   `json:"attachments,omitempty"`
 	CallerTools []session.CallerToolDefinition `json:"caller_tools,omitempty"`
 	CallerID    string                         `json:"caller_id,omitempty"`
@@ -50,7 +48,6 @@ type SessionParams struct {
 
 var sessionActions = []string{"spawn", "message", "get", "list", "end", "events", "cleanup"}
 
-// handleSession is the unified handler for the session tool
 func (s *Server) handleSession(ctx context.Context, request *mcp.CallToolRequest, params *SessionParams) (*mcp.CallToolResult, any, error) {
 	if params.Action == "" {
 		return nil, nil, missingActionError("session", sessionActions)
@@ -58,91 +55,20 @@ func (s *Server) handleSession(ctx context.Context, request *mcp.CallToolRequest
 
 	switch params.Action {
 	case "spawn":
-		return s.sessionSpawn(ctx, request, params)
+		return s.handleSpawn(ctx, request, params)
 	case "message":
-		return s.sessionMessage(ctx, request, params)
+		return s.handleSendMessage(ctx, request, params)
 	case "get":
-		return s.sessionGet(ctx, request, params)
+		return s.handleGetSession(ctx, request, params)
 	case "list":
-		return s.sessionList(ctx, request, params)
+		return s.handleListSessions(ctx, request, params)
 	case "end":
-		return s.sessionEnd(ctx, request, params)
+		return s.handleEndSession(ctx, request, params)
 	case "events":
-		return s.sessionEvents(ctx, request, params)
+		return s.handleSessionEvents(ctx, request, params)
 	case "cleanup":
-		return s.sessionCleanup(ctx, request, params)
+		return s.handleSessionCleanup(ctx, request, params)
 	default:
 		return nil, nil, actionError("session", params.Action, sessionActions)
 	}
-}
-
-func (s *Server) sessionSpawn(ctx context.Context, request *mcp.CallToolRequest, params *SessionParams) (*mcp.CallToolResult, any, error) {
-	return s.handleSpawn(ctx, request, &SpawnParams{
-		ProjectID:          params.ProjectID,
-		WorkspaceID:        params.WorkspaceID,
-		Prompt:             params.Prompt,
-		CreateWorkspace:    params.CreateWorkspace,
-		NewSession:         params.NewSession,
-		ExternalID:         params.ExternalID,
-		Source:             params.Source,
-		Context:            params.Context,
-		Model:              params.Model,
-		AutonomyLevel:      params.AutonomyLevel,
-		ReasoningLevel:     params.ReasoningLevel,
-		ToolsAllowed:       params.ToolsAllowed,
-		ToolsDisallowed:    params.ToolsDisallowed,
-		AppendSystemPrompt: params.AppendSystemPrompt,
-	})
-}
-
-func (s *Server) sessionMessage(ctx context.Context, request *mcp.CallToolRequest, params *SessionParams) (*mcp.CallToolResult, any, error) {
-	return s.handleSendMessage(ctx, request, &SendMessageParams{
-		ProjectID:          params.ProjectID,
-		WorkspaceID:        params.WorkspaceID,
-		Message:            params.Message,
-		Attachments:        params.Attachments,
-		CallerTools:        params.CallerTools,
-		CallerID:           params.CallerID,
-		Context:            params.Context,
-		Model:              params.Model,
-		AutonomyLevel:      params.AutonomyLevel,
-		ReasoningLevel:     params.ReasoningLevel,
-		ToolsAllowed:       params.ToolsAllowed,
-		ToolsDisallowed:    params.ToolsDisallowed,
-		AppendSystemPrompt: params.AppendSystemPrompt,
-		CreateWorkspace:    params.CreateWorkspace,
-		ExternalID:         params.ExternalID,
-		Source:             params.Source,
-	})
-}
-
-func (s *Server) sessionGet(ctx context.Context, request *mcp.CallToolRequest, params *SessionParams) (*mcp.CallToolResult, any, error) {
-	return s.handleGetSession(ctx, request, &GetSessionParams{SessionID: params.SessionID})
-}
-
-func (s *Server) sessionList(ctx context.Context, request *mcp.CallToolRequest, params *SessionParams) (*mcp.CallToolResult, any, error) {
-	return s.handleListSessions(ctx, request, &ListSessionsParams{
-		ProjectID: params.ProjectID,
-		Status:    params.Status,
-	})
-}
-
-func (s *Server) sessionEnd(ctx context.Context, request *mcp.CallToolRequest, params *SessionParams) (*mcp.CallToolResult, any, error) {
-	return s.handleEndSession(ctx, request, &EndSessionParams{SessionID: params.SessionID})
-}
-
-func (s *Server) sessionEvents(ctx context.Context, request *mcp.CallToolRequest, params *SessionParams) (*mcp.CallToolResult, any, error) {
-	return s.handleSessionEvents(ctx, request, &SessionEventsParams{
-		SessionID:       params.SessionID,
-		SinceIndex:      params.SinceIndex,
-		MaxEvents:       params.MaxEvents,
-		IncludeChildren: params.IncludeChildren,
-	})
-}
-
-func (s *Server) sessionCleanup(ctx context.Context, request *mcp.CallToolRequest, params *SessionParams) (*mcp.CallToolResult, any, error) {
-	return s.handleSessionCleanup(ctx, request, &SessionCleanupParams{
-		ProjectID:   params.ProjectID,
-		MaxAgeHours: params.MaxAgeHours,
-	})
 }

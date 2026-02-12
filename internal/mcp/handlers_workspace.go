@@ -8,13 +8,32 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Workspace Management Handlers
+// WorkspaceParams is the params struct for the workspace tool
+type WorkspaceParams struct {
+	Action string `json:"action"` // Required: list, delete
 
-type WorkspaceListParams struct {
-	ProjectID string `json:"project_id"`
+	ProjectID   string `json:"project_id,omitempty"`
+	WorkspaceID string `json:"workspace_id,omitempty"`
 }
 
-func (s *Server) handleWorkspaceList(ctx context.Context, request *mcp.CallToolRequest, params *WorkspaceListParams) (*mcp.CallToolResult, any, error) {
+var workspaceActions = []string{"list", "delete"}
+
+func (s *Server) handleWorkspace(ctx context.Context, request *mcp.CallToolRequest, params *WorkspaceParams) (*mcp.CallToolResult, any, error) {
+	if params.Action == "" {
+		return nil, nil, missingActionError("workspace", workspaceActions)
+	}
+
+	switch params.Action {
+	case "list":
+		return s.handleWorkspaceList(ctx, request, params)
+	case "delete":
+		return s.handleWorkspaceDelete(ctx, request, params)
+	default:
+		return nil, nil, actionError("workspace", params.Action, workspaceActions)
+	}
+}
+
+func (s *Server) handleWorkspaceList(ctx context.Context, request *mcp.CallToolRequest, params *WorkspaceParams) (*mcp.CallToolResult, any, error) {
 	if params.ProjectID == "" {
 		return nil, nil, fmt.Errorf("project_id is required")
 	}
@@ -69,12 +88,7 @@ func (s *Server) handleWorkspaceList(ctx context.Context, request *mcp.CallToolR
 	}, workspaces, nil
 }
 
-type WorkspaceDeleteParams struct {
-	ProjectID   string `json:"project_id"`
-	WorkspaceID string `json:"workspace_id"`
-}
-
-func (s *Server) handleWorkspaceDelete(ctx context.Context, request *mcp.CallToolRequest, params *WorkspaceDeleteParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleWorkspaceDelete(ctx context.Context, request *mcp.CallToolRequest, params *WorkspaceParams) (*mcp.CallToolResult, any, error) {
 	if params.ProjectID == "" {
 		return nil, nil, fmt.Errorf("project_id is required")
 	}

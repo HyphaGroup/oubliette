@@ -210,13 +210,12 @@ func TestSessionWithRecursionFields(t *testing.T) {
 
 func TestStartOptions(t *testing.T) {
 	opts := StartOptions{
-		Model:              "claude-opus-4-5-20251101",
-		AutonomyLevel:      "high",
-		ReasoningLevel:     "medium",
-		WorkspaceID:        "workspace-1",
-		ToolsAllowed:       []string{"read", "write"},
-		ToolsDisallowed:    []string{"execute"},
-		AppendSystemPrompt: "Be extra careful",
+		Model:           "claude-opus-4-5-20251101",
+		AutonomyLevel:   "high",
+		ReasoningLevel:  "medium",
+		WorkspaceID:     "workspace-1",
+		ToolsAllowed:    []string{"read", "write"},
+		ToolsDisallowed: []string{"execute"},
 	}
 
 	if opts.Model != "claude-opus-4-5-20251101" {

@@ -92,8 +92,8 @@ func (m *Manager) CreateBidirectionalSession(ctx context.Context, projectID, con
 		ReasoningLevel: opts.ReasoningLevel,
 		EnabledTools:   opts.ToolsAllowed,
 		DisabledTools:  opts.ToolsDisallowed,
-		SystemPrompt:   opts.AppendSystemPrompt,
-		StreamJSONRPC:  true,
+
+		StreamJSONRPC: true,
 	}
 
 	// Determine which runtime to use (override or manager's default)
@@ -178,8 +178,8 @@ func (m *Manager) ResumeBidirectionalSession(ctx context.Context, existingSessio
 		ReasoningLevel: opts.ReasoningLevel,
 		EnabledTools:   opts.ToolsAllowed,
 		DisabledTools:  opts.ToolsDisallowed,
-		SystemPrompt:   opts.AppendSystemPrompt,
-		StreamJSONRPC:  true,
+
+		StreamJSONRPC: true,
 	}
 
 	// Determine which runtime to use (override or manager's default)

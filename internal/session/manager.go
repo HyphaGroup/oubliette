@@ -140,7 +140,6 @@ func (m *Manager) Create(ctx context.Context, projectID, containerID, prompt str
 		AutonomyLevel: opts.AutonomyLevel,
 		EnabledTools:  opts.ToolsAllowed,
 		DisabledTools: opts.ToolsDisallowed,
-		SystemPrompt:  opts.AppendSystemPrompt,
 	}
 
 	// Determine which runtime to use (override or manager's default)

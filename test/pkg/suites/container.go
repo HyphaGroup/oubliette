@@ -18,7 +18,7 @@ func GetContainerTests() []*testpkg.TestCase {
 			Execute: func(ctx *testpkg.TestContext) error {
 				// Use unique name to prevent container conflicts across test runs
 				projName := fmt.Sprintf("test-container-spawn-%d", time.Now().UnixNano())
-				
+
 				// Pre-cleanup
 				ctx.PreTestCleanup(projName)
 
@@ -54,7 +54,7 @@ func GetContainerTests() []*testpkg.TestCase {
 			Timeout:     60 * time.Second,
 			Execute: func(ctx *testpkg.TestContext) error {
 				projName := fmt.Sprintf("test-container-exec-%d", time.Now().UnixNano())
-				
+
 				// Pre-cleanup
 				ctx.PreTestCleanup(projName)
 
@@ -94,7 +94,7 @@ func GetContainerTests() []*testpkg.TestCase {
 			Timeout:     60 * time.Second,
 			Execute: func(ctx *testpkg.TestContext) error {
 				projName := fmt.Sprintf("test-container-logs-%d", time.Now().UnixNano())
-				
+
 				// Pre-cleanup
 				ctx.PreTestCleanup(projName)
 
@@ -133,7 +133,7 @@ func GetContainerTests() []*testpkg.TestCase {
 			Timeout:     60 * time.Second,
 			Execute: func(ctx *testpkg.TestContext) error {
 				projName := fmt.Sprintf("test-container-stop-%d", time.Now().UnixNano())
-				
+
 				// Pre-cleanup
 				ctx.PreTestCleanup(projName)
 
@@ -226,7 +226,7 @@ func GetContainerTests() []*testpkg.TestCase {
 			Timeout:     90 * time.Second,
 			Execute: func(ctx *testpkg.TestContext) error {
 				projName := fmt.Sprintf("test-container-start-%d", time.Now().UnixNano())
-				
+
 				// Pre-cleanup
 				ctx.PreTestCleanup(projName)
 

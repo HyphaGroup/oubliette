@@ -15,41 +15,62 @@ import (
 
 // Project Management Handlers
 
-// CredentialRefs specifies which credentials to use for a project
-type CredentialRefs struct {
-	GitHub   string `json:"github,omitempty"`
-	Provider string `json:"provider,omitempty"`
+// ProjectParams is the params struct for the project tool
+type ProjectParams struct {
+	Action string `json:"action"` // Required: create, list, get, delete, options
+
+	// For create
+	Name                string                  `json:"name,omitempty"`
+	Description         string                  `json:"description,omitempty"`
+	GitHubToken         string                  `json:"github_token,omitempty"`
+	CredentialRefs      *project.CredentialRefs `json:"credential_refs,omitempty"`
+	RemoteURL           string                  `json:"remote_url,omitempty"`
+	InitGit             *bool                   `json:"init_git,omitempty"`
+	WorkspaceIsolation  *bool                   `json:"workspace_isolation,omitempty"`
+	ProtectedPaths      []string                `json:"protected_paths,omitempty"`
+	MaxRecursionDepth   *int                    `json:"max_recursion_depth,omitempty"`
+	MaxAgentsPerSession *int                    `json:"max_agents_per_session,omitempty"`
+	MaxCostUSD          *float64                `json:"max_cost_usd,omitempty"`
+	Model               string                  `json:"model,omitempty"`
+	Autonomy            string                  `json:"autonomy,omitempty"`
+	Reasoning           string                  `json:"reasoning,omitempty"`
+	DisabledTools       []string                `json:"disabled_tools,omitempty"`
+	MCPServers          map[string]any          `json:"mcp_servers,omitempty"`
+	Permissions         map[string]any          `json:"permissions,omitempty"`
+	ContainerType       string                  `json:"container_type,omitempty"`
+
+	// For list
+	NameContains *string `json:"name_contains,omitempty"`
+	Limit        *int    `json:"limit,omitempty"`
+
+	// For get, delete
+	ProjectID string `json:"project_id,omitempty"`
 }
 
-type CreateProjectParams struct {
-	Name               string          `json:"name"`
-	Description        string          `json:"description,omitempty"`
-	GitHubToken        string          `json:"github_token,omitempty"`    // Direct token (overrides credential_refs)
-	CredentialRefs     *CredentialRefs `json:"credential_refs,omitempty"` // Named credential references
-	RemoteURL          string          `json:"remote_url,omitempty"`
-	InitGit            *bool           `json:"init_git,omitempty"`
-	Languages          []string        `json:"languages,omitempty"`
-	WorkspaceIsolation *bool           `json:"workspace_isolation,omitempty"`
-	ProtectedPaths     []string        `json:"protected_paths,omitempty"`
+var projectActions = []string{"create", "list", "get", "delete", "options"}
 
-	// Project limits (optional, falls back to server defaults)
-	MaxRecursionDepth   *int     `json:"max_recursion_depth,omitempty"`
-	MaxAgentsPerSession *int     `json:"max_agents_per_session,omitempty"`
-	MaxCostUSD          *float64 `json:"max_cost_usd,omitempty"`
+func (s *Server) handleProject(ctx context.Context, request *mcp.CallToolRequest, params *ProjectParams) (*mcp.CallToolResult, any, error) {
+	if params.Action == "" {
+		return nil, nil, missingActionError("project", projectActions)
+	}
 
-	// Agent configuration
-	Model         string         `json:"model,omitempty"`          // Model shorthand (e.g., "sonnet") or full ID
-	Autonomy      string         `json:"autonomy,omitempty"`       // off, low, medium, high
-	Reasoning     string         `json:"reasoning,omitempty"`      // off, low, medium, high
-	DisabledTools []string       `json:"disabled_tools,omitempty"` // Tools to disable
-	MCPServers    map[string]any `json:"mcp_servers,omitempty"`    // Additional MCP servers
-	Permissions   map[string]any `json:"permissions,omitempty"`    // Custom permissions (OpenCode format)
-
-	// Container configuration
-	ContainerType string `json:"container_type,omitempty"` // base, dev (default: dev)
+	switch params.Action {
+	case "create":
+		return s.handleCreateProject(ctx, request, params)
+	case "list":
+		return s.handleListProjects(ctx, request, params)
+	case "get":
+		return s.handleGetProject(ctx, request, params)
+	case "delete":
+		return s.handleDeleteProject(ctx, request, params)
+	case "options":
+		return s.handleProjectOptions(ctx, request, params)
+	default:
+		return nil, nil, actionError("project", params.Action, projectActions)
+	}
 }
 
-func (s *Server) handleCreateProject(ctx context.Context, request *mcp.CallToolRequest, params *CreateProjectParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleCreateProject(ctx context.Context, request *mcp.CallToolRequest, params *ProjectParams) (*mcp.CallToolResult, any, error) {
 	authCtx, err := requireWriteAccess(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -168,22 +189,13 @@ func (s *Server) handleCreateProject(ctx context.Context, request *mcp.CallToolR
 		}
 	}
 
-	// Convert credential refs to project type
-	var credRefs *project.CredentialRefs
-	if params.CredentialRefs != nil {
-		credRefs = &project.CredentialRefs{
-			GitHub:   params.CredentialRefs.GitHub,
-			Provider: params.CredentialRefs.Provider,
-		}
-	}
-
 	req := project.CreateProjectRequest{
-		Name:                params.Name,
-		Description:         params.Description,
-		GitHubToken:         githubToken,
-		RemoteURL:           params.RemoteURL,
-		InitGit:             initGit,
-		Languages:           params.Languages,
+		Name:        params.Name,
+		Description: params.Description,
+		GitHubToken: githubToken,
+		RemoteURL:   params.RemoteURL,
+		InitGit:     initGit,
+
 		WorkspaceIsolation:  workspaceIsolation,
 		ProtectedPaths:      params.ProtectedPaths,
 		MaxRecursionDepth:   params.MaxRecursionDepth,
@@ -196,7 +208,7 @@ func (s *Server) handleCreateProject(ctx context.Context, request *mcp.CallToolR
 		MCPServers:          mcpServers,
 		Permissions:         params.Permissions,
 		ContainerType:       params.ContainerType,
-		CredentialRefs:      credRefs,
+		CredentialRefs:      params.CredentialRefs,
 	}
 
 	proj, err := s.projectMgr.Create(req)
@@ -245,12 +257,7 @@ func (s *Server) handleCreateProject(ctx context.Context, request *mcp.CallToolR
 	}, nil, nil
 }
 
-type ListProjectsParams struct {
-	NameContains *string `json:"name_contains,omitempty"`
-	Limit        *int    `json:"limit,omitempty"`
-}
-
-func (s *Server) handleListProjects(ctx context.Context, request *mcp.CallToolRequest, params *ListProjectsParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleListProjects(ctx context.Context, request *mcp.CallToolRequest, params *ProjectParams) (*mcp.CallToolResult, any, error) {
 	if _, err := requireAuth(ctx); err != nil {
 		return nil, nil, err
 	}
@@ -307,11 +314,7 @@ func (s *Server) handleListProjects(ctx context.Context, request *mcp.CallToolRe
 	}, nil, nil
 }
 
-type GetProjectParams struct {
-	ProjectID string `json:"project_id"`
-}
-
-func (s *Server) handleGetProject(ctx context.Context, request *mcp.CallToolRequest, params *GetProjectParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleGetProject(ctx context.Context, request *mcp.CallToolRequest, params *ProjectParams) (*mcp.CallToolResult, any, error) {
 	if params.ProjectID == "" {
 		return nil, nil, fmt.Errorf("project_id is required")
 	}
@@ -354,11 +357,7 @@ func (s *Server) handleGetProject(ctx context.Context, request *mcp.CallToolRequ
 	}, nil, nil
 }
 
-type DeleteProjectParams struct {
-	ProjectID string `json:"project_id"`
-}
-
-func (s *Server) handleDeleteProject(ctx context.Context, request *mcp.CallToolRequest, params *DeleteProjectParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleDeleteProject(ctx context.Context, request *mcp.CallToolRequest, params *ProjectParams) (*mcp.CallToolResult, any, error) {
 	if params.ProjectID == "" {
 		return nil, nil, fmt.Errorf("project_id is required")
 	}
@@ -419,12 +418,11 @@ type ProjectChangesResult struct {
 
 // OpenSpecChangeInfo represents a single change from openspec list --json
 type OpenSpecChangeInfo struct {
-	Name           string   `json:"name"`
-	CompletedTasks int      `json:"completedTasks"`
-	TotalTasks     int      `json:"totalTasks"`
-	LastModified   string   `json:"lastModified"`
-	Status         string   `json:"status"`
-	ActiveSessions []string `json:"active_sessions,omitempty"`
+	Name           string `json:"name"`
+	CompletedTasks int    `json:"completedTasks"`
+	TotalTasks     int    `json:"totalTasks"`
+	LastModified   string `json:"lastModified"`
+	Status         string `json:"status"`
 }
 
 func (s *Server) handleProjectChanges(ctx context.Context, request *mcp.CallToolRequest, params *ProjectChangesParams) (*mcp.CallToolResult, any, error) {
@@ -475,25 +473,13 @@ func (s *Server) handleProjectChanges(ctx context.Context, request *mcp.CallTool
 	// Enrich with active session info
 	enrichedChanges := make([]OpenSpecChangeInfo, 0, len(openspecOutput.Changes))
 	for _, change := range openspecOutput.Changes {
-		changeInfo := OpenSpecChangeInfo{
+		enrichedChanges = append(enrichedChanges, OpenSpecChangeInfo{
 			Name:           change.Name,
 			CompletedTasks: change.CompletedTasks,
 			TotalTasks:     change.TotalTasks,
 			LastModified:   change.LastModified,
 			Status:         change.Status,
-		}
-
-		// Get active sessions working on this change
-		activeSessions := s.activeSessions.GetSessionsByChangeID(params.ProjectID, change.Name)
-		if len(activeSessions) > 0 {
-			sessionIDs := make([]string, 0, len(activeSessions))
-			for _, sess := range activeSessions {
-				sessionIDs = append(sessionIDs, sess.SessionID)
-			}
-			changeInfo.ActiveSessions = sessionIDs
-		}
-
-		enrichedChanges = append(enrichedChanges, changeInfo)
+		})
 	}
 
 	result := ProjectChangesResult{
@@ -562,8 +548,6 @@ func (s *Server) handleProjectTasks(ctx context.Context, request *mcp.CallToolRe
 
 // Project Options - returns available configuration options for project creation
 
-type ProjectOptionsParams struct{}
-
 type ProjectOptionsResponse struct {
 	Defaults       ProjectDefaultsResponse     `json:"defaults"`
 	Credentials    *CredentialsOptionsResponse `json:"credentials,omitempty"`
@@ -626,7 +610,7 @@ type ContainerTypeInfo struct {
 	Description string `json:"description"`
 }
 
-func (s *Server) handleProjectOptions(ctx context.Context, request *mcp.CallToolRequest, params *ProjectOptionsParams) (*mcp.CallToolResult, any, error) {
+func (s *Server) handleProjectOptions(ctx context.Context, request *mcp.CallToolRequest, params *ProjectParams) (*mcp.CallToolResult, any, error) {
 	if _, err := requireAuth(ctx); err != nil {
 		return nil, nil, err
 	}

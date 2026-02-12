@@ -156,7 +156,7 @@ func GetScheduleTests() []*testpkg.TestCase {
 				ctx.Assertions.AssertContains(getContent, "disabled", "Should show disabled status")
 
 				// Cleanup
-				ctx.Client.InvokeTool("schedule", map[string]interface{}{"action": "delete","schedule_id": scheduleID})
+				ctx.Client.InvokeTool("schedule", map[string]interface{}{"action": "delete", "schedule_id": scheduleID})
 
 				return nil
 			},
@@ -273,7 +273,7 @@ func GetScheduleTests() []*testpkg.TestCase {
 				ctx.Assertions.AssertNoError(err, "Should invoke schedule_trigger")
 				if err != nil {
 					// Cleanup even on error
-					ctx.Client.InvokeTool("schedule", map[string]interface{}{"action": "delete","schedule_id": scheduleID})
+					ctx.Client.InvokeTool("schedule", map[string]interface{}{"action": "delete", "schedule_id": scheduleID})
 					return err
 				}
 
@@ -285,7 +285,7 @@ func GetScheduleTests() []*testpkg.TestCase {
 				ctx.Assertions.AssertContains(triggerContent, "triggered", "Should confirm trigger")
 
 				// Cleanup
-				ctx.Client.InvokeTool("schedule", map[string]interface{}{"action": "delete","schedule_id": scheduleID})
+				ctx.Client.InvokeTool("schedule", map[string]interface{}{"action": "delete", "schedule_id": scheduleID})
 
 				return nil
 			},
@@ -362,7 +362,7 @@ func GetScheduleTests() []*testpkg.TestCase {
 				ctx.Assertions.AssertContains(listContent, "scope-test", "Filter should include matching schedule")
 
 				// Cleanup
-				ctx.Client.InvokeTool("schedule", map[string]interface{}{"action": "delete","schedule_id": scheduleID})
+				ctx.Client.InvokeTool("schedule", map[string]interface{}{"action": "delete", "schedule_id": scheduleID})
 
 				return nil
 			},

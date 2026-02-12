@@ -782,8 +782,7 @@ func convertCredentialRefs(refs *CredentialRefs) *agentconfig.CredentialRefs {
 		return nil
 	}
 	return &agentconfig.CredentialRefs{
-		GitHub:   refs.GitHub,
-		Provider: refs.Provider,
+		GitHub: refs.GitHub,
 	}
 }
 

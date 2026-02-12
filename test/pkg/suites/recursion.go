@@ -57,7 +57,7 @@ func GetRecursionTests() []*testpkg.TestCase {
 			Timeout:     120 * time.Second,
 			Execute: func(ctx *testpkg.TestContext) error {
 				projName := fmt.Sprintf("test-recursion-session-%d", time.Now().UnixNano())
-				
+
 				// Pre-cleanup
 				ctx.PreTestCleanup(projName)
 
@@ -73,7 +73,7 @@ func GetRecursionTests() []*testpkg.TestCase {
 				ctx.Log("Starting session task")
 				startParams := map[string]interface{}{
 					"project_id": projID,
-					"prompt":       "Simple task",
+					"prompt":     "Simple task",
 				}
 
 				startResult, err := ctx.Client.InvokeTool("session", startParams)
@@ -119,7 +119,7 @@ func GetRecursionTests() []*testpkg.TestCase {
 			Timeout:     120 * time.Second,
 			Execute: func(ctx *testpkg.TestContext) error {
 				projName := fmt.Sprintf("test-recursion-child-%d", time.Now().UnixNano())
-				
+
 				// Pre-cleanup
 				ctx.PreTestCleanup(projName)
 
@@ -135,7 +135,7 @@ func GetRecursionTests() []*testpkg.TestCase {
 				ctx.Log("Starting root session task")
 				startParams := map[string]interface{}{
 					"project_id": projID,
-					"prompt":       "Parent task",
+					"prompt":     "Parent task",
 				}
 
 				startResult, err := ctx.Client.InvokeTool("session", startParams)
@@ -183,7 +183,7 @@ func GetRecursionTests() []*testpkg.TestCase {
 			Timeout:     120 * time.Second,
 			Execute: func(ctx *testpkg.TestContext) error {
 				projName := fmt.Sprintf("test-recursion-depth-%d", time.Now().UnixNano())
-				
+
 				// Pre-cleanup
 				ctx.PreTestCleanup(projName)
 
@@ -199,7 +199,7 @@ func GetRecursionTests() []*testpkg.TestCase {
 				ctx.Log("Starting session task")
 				startParams := map[string]interface{}{
 					"project_id": projID,
-					"prompt":       "Check depth",
+					"prompt":     "Check depth",
 				}
 
 				startResult, err := ctx.Client.InvokeTool("session", startParams)
@@ -246,7 +246,7 @@ func GetRecursionTests() []*testpkg.TestCase {
 			Timeout:     90 * time.Second,
 			Execute: func(ctx *testpkg.TestContext) error {
 				projName := fmt.Sprintf("test-recursion-workspace-%d", time.Now().UnixNano())
-				
+
 				// Pre-cleanup
 				ctx.PreTestCleanup(projName)
 
